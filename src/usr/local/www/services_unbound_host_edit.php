@@ -12,17 +12,49 @@
  * Copyright (c) 2003-2004 Manuel Kasper <mk@neon1.net>.
  * All rights reserved.
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ * 1. Redistributions of source code must retain the above copyright notice,
+ *    this list of conditions and the following disclaimer.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in
+ *    the documentation and/or other materials provided with the
+ *    distribution.
+ *
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgment:
+ *    "This product includes software developed by the pfSense Project
+ *    for use in the pfSense® software distribution. (http://www.pfsense.org/).
+ *
+ * 4. The names "pfSense" and "pfSense Project" must not be used to
+ *    endorse or promote products derived from this software without
+ *    prior written permission. For written permission, please contact
+ *    coreteam@pfsense.org.
+ *
+ * 5. Products derived from this software may not be called "pfSense"
+ *    nor may "pfSense" appear in their names without prior written
+ *    permission of the Electric Sheep Fencing, LLC.
+ *
+ * 6. Redistributions of any form whatsoever must retain the following
+ *    acknowledgment:
+ *
+ * "This product includes software developed by the pfSense Project
+ * for use in the pfSense software distribution (http://www.pfsense.org/).
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE pfSense PROJECT ``AS IS'' AND ANY
+ * EXPRESSED OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE pfSense PROJECT OR
+ * ITS CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
+ * OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 ##|+PRIV
@@ -47,23 +79,32 @@ function hosts_sort() {
 }
 
 require_once("guiconfig.inc");
+require_once("system.inc");
 
 if (!is_array($config['unbound']['hosts'])) {
 	$config['unbound']['hosts'] = array();
 }
 
 $a_hosts = &$config['unbound']['hosts'];
-$id = $_REQUEST['id'];
+
+if (is_numericint($_GET['id'])) {
+	$id = $_GET['id'];
+}
+if (isset($_POST['id']) && is_numericint($_POST['id'])) {
+	$id = $_POST['id'];
+}
 
 if (isset($id) && $a_hosts[$id]) {
 	$pconfig['host'] = $a_hosts[$id]['host'];
 	$pconfig['domain'] = $a_hosts[$id]['domain'];
+	$pconfig['track_system_domain'] = $a_hosts[$id]['track_system_domain'];
+	$pconfig['add_unqualified'] = $a_hosts[$id]['add_unqualified'];
 	$pconfig['ip'] = $a_hosts[$id]['ip'];
 	$pconfig['descr'] = $a_hosts[$id]['descr'];
 	$pconfig['aliases'] = $a_hosts[$id]['aliases'];
 }
 
-if ($_POST['save']) {
+if ($_POST) {
 	unset($input_errors);
 	$pconfig = $_POST;
 
@@ -153,6 +194,8 @@ if ($_POST['save']) {
 		$hostent = array();
 		$hostent['host'] = $_POST['host'];
 		$hostent['domain'] = $_POST['domain'];
+		$hostent['track_system_domain'] = $_POST['track_system_domain'];
+		$hostent['add_unqualified'] = $_POST['add_unqualified'];
 		$hostent['ip'] = $_POST['ip'];
 		$hostent['descr'] = $_POST['descr'];
 		$hostent['aliases']['item'] = $aliases;
@@ -173,8 +216,25 @@ if ($_POST['save']) {
 	}
 }
 
+// Delete a row in the options table
+if ($_GET['act'] == "delopt") {
+	$idx = $_GET['id'];
+
+	if ($pconfig['aliases'] && is_array($pconfig['aliases']['item'][$idx])) {
+	   unset($pconfig['aliases']['item'][$idx]);
+	}
+}
+
+// Add an option row
+if ($_GET['act'] == "addopt") {
+	if (!is_array($pconfig['aliases']['item'])) {
+		$pconfig['aliases']['item'] = array();
+	}
+
+	array_push($pconfig['aliases']['item'], array('host' => null, 'domain' => null, 'description' => null));
+}
+
 $pgtitle = array(gettext("Services"), gettext("DNS Resolver"), gettext("General Settings"), gettext("Edit Host Override"));
-$pglinks = array("", "services_unbound.php", "services_unbound.php", "@self");
 $shortcut_section = "resolver";
 include("head.inc");
 
@@ -191,23 +251,41 @@ $section->addInput(new Form_Input(
 	'Host',
 	'text',
 	$pconfig['host']
-))->setHelp('Name of the host, without the domain part%1$s' .
-			'e.g.: "myhost"', '<br />');
+))->setHelp('Name of the host, without the domain part' . '<br />' .
+			'e.g.: "myhost"');
 
 $section->addInput(new Form_Input(
 	'domain',
 	'*Domain',
 	'text',
 	$pconfig['domain']
-))->setHelp('Domain of the host%1$s' .
-			'e.g.: "example.com"', '<br />');
+))->setHelp('Domain of the host' . '<br />' .
+			'e.g.: "example.com"');
+
+$group = new Form_Group('Options');
+
+$group->add(new Form_Checkbox(
+	'track_system_domain',
+	'track_system_domain',
+	'Automatically track system domain',
+	$pconfig['track_system_domain']
+))->setHelp('The domain will be dynamically updated based on the setting in <a href="system.php">System &gt; General Setup</a>');
+
+$group->add(new Form_Checkbox(
+	'add_unqualified',
+	null,
+	'Also add unqualified (short) hostname',
+	$pconfig['add_unqualified']
+))->setHelp('Creates an entry for e.g. "foo" in addition to "foo.example.com"');
+
+$section->add($group);
 
 $section->addInput(new Form_IpAddress(
 	'ip',
 	'*IP Address',
 	$pconfig['ip']
-))->setHelp('IP address of the host%1$s' .
-			'e.g.: 192.168.100.100 or fd00:abcd::1', '<br />');
+))->setHelp('IP address of the host' . '<br />' .
+			'e.g.: 192.168.100.100 or fd00:abcd::1');
 
 $section->addInput(new Form_Input(
 	'descr',
@@ -283,5 +361,25 @@ $form->addGlobal(new Form_Button(
 
 $form->add($section);
 print($form);
+?>
 
-include("foot.inc");
+<script type="text/javascript">
+//<![CDATA[
+events.push(function() {
+	function setDomainFromSystem() {
+		var s_track = $('#track_system_domain').prop('checked');
+		if (s_track) {
+			$('#domain').val('<?=$config['system']['domain'];?>');
+		} else {
+			$('#domain').val('<?=$pconfig['domain'];?>');
+		}
+	}
+
+	$('#track_system_domain').click(function () {
+		setDomainFromSystem();
+	});
+});
+//]]>
+</script>
+
+<?php include("foot.inc");

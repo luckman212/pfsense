@@ -7,17 +7,49 @@
  * Copyright (c) 2014 Warren Baker (warren@pfsense.org)
  * All rights reserved.
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ * 1. Redistributions of source code must retain the above copyright notice,
+ *    this list of conditions and the following disclaimer.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in
+ *    the documentation and/or other materials provided with the
+ *    distribution.
+ *
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgment:
+ *    "This product includes software developed by the pfSense Project
+ *    for use in the pfSense® software distribution. (http://www.pfsense.org/).
+ *
+ * 4. The names "pfSense" and "pfSense Project" must not be used to
+ *    endorse or promote products derived from this software without
+ *    prior written permission. For written permission, please contact
+ *    coreteam@pfsense.org.
+ *
+ * 5. Products derived from this software may not be called "pfSense"
+ *    nor may "pfSense" appear in their names without prior written
+ *    permission of the Electric Sheep Fencing, LLC.
+ *
+ * 6. Redistributions of any form whatsoever must retain the following
+ *    acknowledgment:
+ *
+ * "This product includes software developed by the pfSense Project
+ * for use in the pfSense software distribution (http://www.pfsense.org/).
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE pfSense PROJECT ``AS IS'' AND ANY
+ * EXPRESSED OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE pfSense PROJECT OR
+ * ITS CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
+ * OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 ##|+PRIV
@@ -86,108 +118,106 @@ if (empty($a_unboundcfg['system_domain_local_zone_type'])) {
 	$pconfig['system_domain_local_zone_type'] = $a_unboundcfg['system_domain_local_zone_type'];
 }
 
-
-if ($_POST['apply']) {
-	$retval = 0;
-	$retval |= services_unbound_configure();
-	if ($retval == 0) {
-		clear_subsystem_dirty('unbound');
-	}
-	/* Update resolv.conf in case the interface bindings exclude localhost. */
-	system_resolvconf_generate();
-	/* Start or restart dhcpleases when it's necessary */
-	system_dhcpleases_configure();
-}
-
-if ($_POST['save']) {
-	$pconfig = $_POST;
-	unset($input_errors);
-
-	if (isset($pconfig['enable']) && isset($config['dnsmasq']['enable'])) {
-		if ($pconfig['port'] == $config['dnsmasq']['port']) {
-			$input_errors[] = gettext("The DNS Forwarder is enabled using this port. Choose a non-conflicting port, or disable the DNS Forwarder.");
+if ($_POST) {
+	if ($_POST['apply']) {
+		$retval = services_unbound_configure();
+		$savemsg = get_std_save_message($retval);
+		if ($retval == 0) {
+			clear_subsystem_dirty('unbound');
 		}
-	}
+		/* Update resolv.conf in case the interface bindings exclude localhost. */
+		system_resolvconf_generate();
+		/* Start or restart dhcpleases when it's necessary */
+		system_dhcpleases_configure();
+	} else {
+		$pconfig = $_POST;
+		unset($input_errors);
 
-	// forwarding mode requires having valid DNS servers
-	if (isset($pconfig['forwarding'])) {
-		$founddns = false;
-		if (isset($config['system']['dnsallowoverride'])) {
-			$dns_servers = get_dns_servers();
-			if (is_array($dns_servers)) {
-				foreach ($dns_servers as $dns_server) {
-					if (!ip_in_subnet($dns_server, "127.0.0.0/8")) {
+		if (isset($pconfig['enable']) && isset($config['dnsmasq']['enable'])) {
+			if ($pconfig['port'] == $config['dnsmasq']['port']) {
+				$input_errors[] = gettext("The DNS Forwarder is enabled using this port. Choose a non-conflicting port, or disable the DNS Forwarder.");
+			}
+		}
+
+		// forwarding mode requires having valid DNS servers
+		if (isset($pconfig['forwarding'])) {
+			$founddns = false;
+			if (isset($config['system']['dnsallowoverride'])) {
+				$dns_servers = get_dns_servers();
+				if (is_array($dns_servers)) {
+					foreach ($dns_servers as $dns_server) {
+						if (!ip_in_subnet($dns_server, "127.0.0.0/8")) {
+							$founddns = true;
+						}
+					}
+				}
+			}
+			if (is_array($config['system']['dnsserver'])) {
+				foreach ($config['system']['dnsserver'] as $dnsserver) {
+					if (is_ipaddr($dnsserver)) {
 						$founddns = true;
 					}
 				}
 			}
-		}
-		if (is_array($config['system']['dnsserver'])) {
-			foreach ($config['system']['dnsserver'] as $dnsserver) {
-				if (is_ipaddr($dnsserver)) {
-					$founddns = true;
-				}
+			if ($founddns == false) {
+				$input_errors[] = gettext("At least one DNS server must be specified under System &gt; General Setup to enable Forwarding mode.");
 			}
 		}
-		if ($founddns == false) {
-			$input_errors[] = gettext("At least one DNS server must be specified under System &gt; General Setup to enable Forwarding mode.");
+
+		if (empty($pconfig['active_interface'])) {
+			$input_errors[] = gettext("One or more Network Interfaces must be selected for binding.");
+		} else if (!isset($config['system']['dnslocalhost']) && (!in_array("lo0", $pconfig['active_interface']) && !in_array("all", $pconfig['active_interface']))) {
+			$input_errors[] = gettext("This system is configured to use the DNS Resolver as its DNS server, so Localhost or All must be selected in Network Interfaces.");
 		}
+
+		if (empty($pconfig['outgoing_interface'])) {
+			$input_errors[] = gettext("One or more Outgoing Network Interfaces must be selected.");
+		}
+
+		if ($pconfig['port'] && !is_port($pconfig['port'])) {
+			$input_errors[] = gettext("A valid port number must be specified.");
+		}
+
+		if (is_array($pconfig['active_interface']) && !empty($pconfig['active_interface'])) {
+			$display_active_interface = $pconfig['active_interface'];
+			$pconfig['active_interface'] = implode(",", $pconfig['active_interface']);
+		}
+
+		$display_custom_options = $pconfig['custom_options'];
+		$pconfig['custom_options'] = base64_encode(str_replace("\r\n", "\n", $pconfig['custom_options']));
+
+		if (is_array($pconfig['outgoing_interface']) && !empty($pconfig['outgoing_interface'])) {
+			$display_outgoing_interface = $pconfig['outgoing_interface'];
+			$pconfig['outgoing_interface'] = implode(",", $pconfig['outgoing_interface']);
+		}
+
+		$test_output = array();
+		if (test_unbound_config($pconfig, $test_output)) {
+			$input_errors[] = gettext("The generated config file cannot be parsed by unbound. Please correct the following errors:");
+			$input_errors = array_merge($input_errors, $test_output);
+		}
+
+		if (!$input_errors) {
+			$a_unboundcfg['enable'] = isset($pconfig['enable']);
+			$a_unboundcfg['port'] = $pconfig['port'];
+			$a_unboundcfg['dnssec'] = isset($pconfig['dnssec']);
+			$a_unboundcfg['forwarding'] = isset($pconfig['forwarding']);
+			$a_unboundcfg['regdhcp'] = isset($pconfig['regdhcp']);
+			$a_unboundcfg['regdhcpstatic'] = isset($pconfig['regdhcpstatic']);
+			$a_unboundcfg['active_interface'] = $pconfig['active_interface'];
+			$a_unboundcfg['outgoing_interface'] = $pconfig['outgoing_interface'];
+			$a_unboundcfg['system_domain_local_zone_type'] = $pconfig['system_domain_local_zone_type'];
+			$a_unboundcfg['custom_options'] = $pconfig['custom_options'];
+
+			write_config(gettext("DNS Resolver configured."));
+			mark_subsystem_dirty('unbound');
+		}
+
+		$pconfig['active_interface'] = $display_active_interface;
+		$pconfig['outgoing_interface'] = $display_outgoing_interface;
+		$pconfig['custom_options'] = $display_custom_options;
 	}
-
-	if (empty($pconfig['active_interface'])) {
-		$input_errors[] = gettext("One or more Network Interfaces must be selected for binding.");
-	} else if (!isset($config['system']['dnslocalhost']) && (!in_array("lo0", $pconfig['active_interface']) && !in_array("all", $pconfig['active_interface']))) {
-		$input_errors[] = gettext("This system is configured to use the DNS Resolver as its DNS server, so Localhost or All must be selected in Network Interfaces.");
-	}
-
-	if (empty($pconfig['outgoing_interface'])) {
-		$input_errors[] = gettext("One or more Outgoing Network Interfaces must be selected.");
-	}
-
-	if ($pconfig['port'] && !is_port($pconfig['port'])) {
-		$input_errors[] = gettext("A valid port number must be specified.");
-	}
-
-	if (is_array($pconfig['active_interface']) && !empty($pconfig['active_interface'])) {
-		$display_active_interface = $pconfig['active_interface'];
-		$pconfig['active_interface'] = implode(",", $pconfig['active_interface']);
-	}
-
-	$display_custom_options = $pconfig['custom_options'];
-	$pconfig['custom_options'] = base64_encode(str_replace("\r\n", "\n", $pconfig['custom_options']));
-
-	if (is_array($pconfig['outgoing_interface']) && !empty($pconfig['outgoing_interface'])) {
-		$display_outgoing_interface = $pconfig['outgoing_interface'];
-		$pconfig['outgoing_interface'] = implode(",", $pconfig['outgoing_interface']);
-	}
-
-	$test_output = array();
-	if (test_unbound_config($pconfig, $test_output)) {
-		$input_errors[] = gettext("The generated config file cannot be parsed by unbound. Please correct the following errors:");
-		$input_errors = array_merge($input_errors, $test_output);
-	}
-
-	if (!$input_errors) {
-		$a_unboundcfg['enable'] = isset($pconfig['enable']);
-		$a_unboundcfg['port'] = $pconfig['port'];
-		$a_unboundcfg['dnssec'] = isset($pconfig['dnssec']);
-		$a_unboundcfg['forwarding'] = isset($pconfig['forwarding']);
-		$a_unboundcfg['regdhcp'] = isset($pconfig['regdhcp']);
-		$a_unboundcfg['regdhcpstatic'] = isset($pconfig['regdhcpstatic']);
-		$a_unboundcfg['active_interface'] = $pconfig['active_interface'];
-		$a_unboundcfg['outgoing_interface'] = $pconfig['outgoing_interface'];
-		$a_unboundcfg['system_domain_local_zone_type'] = $pconfig['system_domain_local_zone_type'];
-		$a_unboundcfg['custom_options'] = $pconfig['custom_options'];
-
-		write_config(gettext("DNS Resolver configured."));
-		mark_subsystem_dirty('unbound');
-	}
-
-	$pconfig['active_interface'] = $display_active_interface;
-	$pconfig['outgoing_interface'] = $display_outgoing_interface;
-	$pconfig['custom_options'] = $display_custom_options;
 }
-
 
 if ($pconfig['custom_options']) {
 	$customoptions = true;
@@ -195,18 +225,18 @@ if ($pconfig['custom_options']) {
 	$customoptions = false;
 }
 
-if ($_POST['act'] == "del") {
-	if ($_POST['type'] == 'host') {
-		if ($a_hosts[$_POST['id']]) {
-			unset($a_hosts[$_POST['id']]);
+if ($_GET['act'] == "del") {
+	if ($_GET['type'] == 'host') {
+		if ($a_hosts[$_GET['id']]) {
+			unset($a_hosts[$_GET['id']]);
 			write_config();
 			mark_subsystem_dirty('unbound');
 			header("Location: services_unbound.php");
 			exit;
 		}
-	} elseif ($_POST['type'] == 'doverride') {
-		if ($a_domainOverrides[$_POST['id']]) {
-			unset($a_domainOverrides[$_POST['id']]);
+	} elseif ($_GET['type'] == 'doverride') {
+		if ($a_domainOverrides[$_GET['id']]) {
+			unset($a_domainOverrides[$_GET['id']]);
 			write_config();
 			mark_subsystem_dirty('unbound');
 			header("Location: services_unbound.php");
@@ -238,7 +268,6 @@ function build_if_list($selectedifs) {
 }
 
 $pgtitle = array(gettext("Services"), gettext("DNS Resolver"), gettext("General Settings"));
-$pglinks = array("", "@self", "@self");
 $shortcut_section = "resolver";
 
 include_once("head.inc");
@@ -247,8 +276,8 @@ if ($input_errors) {
 	print_input_errors($input_errors);
 }
 
-if ($_POST['apply']) {
-	print_apply_result_box($retval);
+if ($savemsg) {
+	print_info_box($savemsg, 'success');
 }
 
 if (is_subsystem_dirty('unbound')) {
@@ -320,26 +349,26 @@ $section->addInput(new Form_Checkbox(
 	'DNS Query Forwarding',
 	'Enable Forwarding Mode',
 	$pconfig['forwarding']
-))->setHelp('If this option is set, DNS queries will be forwarded to the upstream DNS servers defined under'.
-					' %1$sSystem &gt; General Setup%2$s or those obtained via DHCP/PPP on WAN'.
-					' (if DNS Server Override is enabled there).','<a href="system.php">','</a>');
+))->setHelp(sprintf('If this option is set, DNS queries will be forwarded to the upstream DNS servers defined under'.
+					' %sSystem &gt; General Setup%s or those obtained via DHCP/PPP on WAN'.
+					' (if DNS Server Override is enabled there).','<a href="system.php">','</a>'));
 
 $section->addInput(new Form_Checkbox(
 	'regdhcp',
 	'DHCP Registration',
 	'Register DHCP leases in the DNS Resolver',
 	$pconfig['regdhcp']
-))->setHelp('If this option is set, then machines that specify their hostname when requesting a DHCP lease will be registered'.
+))->setHelp(sprintf('If this option is set, then machines that specify their hostname when requesting a DHCP lease will be registered'.
 					' in the DNS Resolver, so that their name can be resolved.'.
-					' The domain in %1$sSystem &gt; General Setup%2$s should also be set to the proper value.','<a href="system.php">','</a>');
+					' The domain in %sSystem &gt; General Setup%s should also be set to the proper value.','<a href="system.php">','</a>'));
 
 $section->addInput(new Form_Checkbox(
 	'regdhcpstatic',
 	'Static DHCP',
 	'Register DHCP static mappings in the DNS Resolver',
 	$pconfig['regdhcpstatic']
-))->setHelp('If this option is set, then DHCP static mappings will be registered in the DNS Resolver, so that their name can be resolved. '.
-					'The domain in %1$sSystem &gt; General Setup%2$s should also be set to the proper value.','<a href="system.php">','</a>');
+))->setHelp(sprintf('If this option is set, then DHCP static mappings will be registered in the DNS Resolver, so that their name can be resolved. '.
+					'The domain in %sSystem &gt; General Setup%s should also be set to the proper value.','<a href="system.php">','</a>'));
 
 $btnadv = new Form_Button(
 	'btnadvcustom',
@@ -437,6 +466,8 @@ events.push(function() {
 				<tr>
 					<th><?=gettext("Host")?></th>
 					<th><?=gettext("Domain")?></th>
+					<th><?=gettext("Track")?></th>
+					<th><?=gettext("Unqual")?></th>
 					<th><?=gettext("IP")?></th>
 					<th><?=gettext("Description")?></th>
 					<th><?=gettext("Actions")?></th>
@@ -452,7 +483,19 @@ foreach ($a_hosts as $hostent):
 						<?=$hostent['host']?>
 					</td>
 					<td>
-						<?=$hostent['domain']?>
+					<?php
+						if ($hostent['track_system_domain']) {
+							print '<span class="text-success">' . $hostent['domain'] . '</span>';
+						} else {
+							print $hostent['domain'];
+						}
+					?>
+					</td>
+					<td>
+						<?=$hostent['track_system_domain'] ? '<i class="fa fa-check" title="Domain is being dynamically set based on the setting in System &gt; General"></i>' : '&nbsp;'?>
+					</td>
+					<td>
+						<?=$hostent['add_unqualified'] ? '<i class="fa fa-check" title="Both qualified and unqualified entries have been created for this host"></i>' : '&nbsp;'?>
 					</td>
 					<td>
 						<?=$hostent['ip']?>
@@ -462,7 +505,7 @@ foreach ($a_hosts as $hostent):
 					</td>
 					<td>
 						<a class="fa fa-pencil"	title="<?=gettext('Edit host override')?>" href="services_unbound_host_edit.php?id=<?=$i?>"></a>
-						<a class="fa fa-trash"	title="<?=gettext('Delete host override')?>" href="services_unbound.php?type=host&amp;act=del&amp;id=<?=$i?>" usepost></a>
+						<a class="fa fa-trash"	title="<?=gettext('Delete host override')?>" href="services_unbound.php?type=host&amp;act=del&amp;id=<?=$i?>"></a>
 					</td>
 				</tr>
 
@@ -476,6 +519,12 @@ foreach ($a_hosts as $hostent):
 					</td>
 					<td>
 						<?=$alias['domain']?>
+					</td>
+					<td>
+						&nbsp;
+					</td>
+					<td>
+						&nbsp;
 					</td>
 					<td>
 						<?=gettext("Alias for ");?><?=$hostent['host'] ? $hostent['host'] . '.' . $hostent['domain'] : $hostent['domain']?>
@@ -536,7 +585,7 @@ foreach ($a_domainOverrides as $doment):
 					</td>
 					<td>
 						<a class="fa fa-pencil"	title="<?=gettext('Edit domain override')?>" href="services_unbound_domainoverride_edit.php?id=<?=$i?>"></a>
-						<a class="fa fa-trash"	title="<?=gettext('Delete domain override')?>" href="services_unbound.php?act=del&amp;type=doverride&amp;id=<?=$i?>" usepost></a>
+						<a class="fa fa-trash"	title="<?=gettext('Delete domain override')?>" href="services_unbound.php?act=del&amp;type=doverride&amp;id=<?=$i?>"></a>
 					</td>
 				</tr>
 <?php
@@ -556,14 +605,14 @@ endforeach;
 </nav>
 
 <div class="infoblock">
-	<?php print_info_box(sprintf(gettext('If the DNS Resolver is enabled, the DHCP'.
-		' service (if enabled) will automatically serve the LAN IP'.
-		' address as a DNS server to DHCP clients so they will use'.
-		' the DNS Resolver. If Forwarding is enabled, the DNS Resolver will use the DNS servers'.
-		' entered in %1$sSystem &gt; General Setup%2$s'.
-		' or those obtained via DHCP or PPP on WAN if &quot;Allow'.
-		' DNS server list to be overridden by DHCP/PPP on WAN&quot;'.
-		' is checked.'), '<a href="system.php">', '</a>'), 'info', false); ?>
+	<?php print_info_box(sprintf(gettext("If the DNS Resolver is enabled, the DHCP".
+		" service (if enabled) will automatically serve the LAN IP".
+		" address as a DNS server to DHCP clients so they will use".
+		" the DNS Resolver. If Forwarding is enabled, the DNS Resolver will use the DNS servers".
+		" entered in %sSystem &gt; General Setup%s".
+		" or those obtained via DHCP or PPP on WAN if &quot;Allow".
+		" DNS server list to be overridden by DHCP/PPP on WAN&quot;".
+		" is checked."), '<a href="system.php">', '</a>'), 'info', false); ?>
 </div>
 
 <?php include("foot.inc");

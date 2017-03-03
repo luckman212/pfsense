@@ -10,17 +10,49 @@
  * Copyright (c) 2003-2004 Manuel Kasper <mk@neon1.net>.
  * All rights reserved.
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
  *
- * http://www.apache.org/licenses/LICENSE-2.0
+ * 1. Redistributions of source code must retain the above copyright notice,
+ *    this list of conditions and the following disclaimer.
  *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in
+ *    the documentation and/or other materials provided with the
+ *    distribution.
+ *
+ * 3. All advertising materials mentioning features or use of this software
+ *    must display the following acknowledgment:
+ *    "This product includes software developed by the pfSense Project
+ *    for use in the pfSense® software distribution. (http://www.pfsense.org/).
+ *
+ * 4. The names "pfSense" and "pfSense Project" must not be used to
+ *    endorse or promote products derived from this software without
+ *    prior written permission. For written permission, please contact
+ *    coreteam@pfsense.org.
+ *
+ * 5. Products derived from this software may not be called "pfSense"
+ *    nor may "pfSense" appear in their names without prior written
+ *    permission of the Electric Sheep Fencing, LLC.
+ *
+ * 6. Redistributions of any form whatsoever must retain the following
+ *    acknowledgment:
+ *
+ * "This product includes software developed by the pfSense Project
+ * for use in the pfSense software distribution (http://www.pfsense.org/).
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE pfSense PROJECT ``AS IS'' AND ANY
+ * EXPRESSED OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+ * PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE pfSense PROJECT OR
+ * ITS CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+ * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ * NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+ * LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+ * STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
+ * OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
 function activate_powerd() {
@@ -30,6 +62,10 @@ function activate_powerd() {
 		exec("/usr/bin/killall powerd");
 	}
 	if (isset($config['system']['powerd_enable'])) {
+		if ($g["platform"] == "nanobsd") {
+			exec("/sbin/kldload cpufreq");
+		}
+
 		$ac_mode = "hadp";
 		if (!empty($config['system']['powerd_ac_mode'])) {
 			$ac_mode = $config['system']['powerd_ac_mode'];
@@ -171,7 +207,7 @@ function system_resolvconf_generate($dynupdate = false) {
 
 	$dnslock = lock('resolvconf', LOCK_EX);
 
-	$fd = fopen("{$g['etc_path']}/resolv.conf", "w");
+	$fd = fopen("{$g['varetc_path']}/resolv.conf", "w");
 	if (!$fd) {
 		printf("Error: cannot open resolv.conf in system_resolvconf_generate().\n");
 		unlock($dnslock);
@@ -182,7 +218,7 @@ function system_resolvconf_generate($dynupdate = false) {
 	fclose($fd);
 
 	// Prevent resolvconf(8) from rewriting our resolv.conf
-	$fd = fopen("{$g['etc_path']}/resolvconf.conf", "w");
+	$fd = fopen("{$g['varetc_path']}/resolvconf.conf", "w");
 	if (!$fd) {
 		printf("Error: cannot open resolvconf.conf in system_resolvconf_generate().\n");
 		return 1;
@@ -211,14 +247,17 @@ function system_resolvconf_generate($dynupdate = false) {
 			$dnsserver = $syscfg['dnsserver'][$dnscounter - 1];
 
 			if (is_ipaddr($gatewayip)) {
-				route_add_or_change("-host {$inet6}{$dnsserver} {$gatewayip}");
+				$cmd = 'change';
 			} else {
 				/* Remove old route when disable gw */
-				mwexec("/sbin/route delete -host {$inet6}{$dnsserver}");
-				if (isset($config['system']['route-debug'])) {
-					$mt = microtime();
-					log_error("ROUTING debug: $mt - route delete -host {$inet6}{$dnsserver}");
-				}
+				$cmd = 'delete';
+				$gatewayip = '';
+			}
+
+			mwexec("/sbin/route {$cmd} -host {$inet6}{$dnsserver} {$gatewayip}");
+			if (isset($config['system']['route-debug'])) {
+				$mt = microtime();
+				log_error("ROUTING debug: $mt - route {$cmd} -host {$inet6}{$dnsserver} {$gatewayip}");
 			}
 		}
 		$dnscounter++;
@@ -345,6 +384,8 @@ function system_hosts_local_entries() {
 
 /* Read host override entries from dnsmasq or unbound */
 function system_hosts_override_entries($dnscfg) {
+	global $config;
+	$syscfg = $config['system'];
 	$hosts = array();
 
 	if (!is_array($dnscfg) ||
@@ -358,11 +399,16 @@ function system_hosts_override_entries($dnscfg) {
 		if ($host['host'] || $host['host'] == "0") {
 			$fqdn .= "{$host['host']}.";
 		}
-		$fqdn .= $host['domain'];
-
+		if ($host['track_system_domain']) {
+			$fqdn .= $syscfg['domain'];
+		} else {
+			$fqdn .= $host['domain'];
+		}
 		$hosts[] = array(
 		    'ipaddr' => $host['ip'],
-		    'fqdn' => $fqdn
+		    'fqdn' => $fqdn,
+		    'name' => $host['host'],
+		    'add_unqualified' => $host['add_unqualified']
 		);
 
 		if (!is_array($host['aliases']) ||
@@ -535,7 +581,7 @@ function system_hosts_generate() {
 	}
 	unset($hosts_array);
 
-	$fd = fopen("{$g['etc_path']}/hosts", "w");
+	$fd = fopen("{$g['varetc_path']}/hosts", "w");
 	if (!$fd) {
 		log_error(gettext(
 		    "Error: cannot open hosts file in system_hosts_generate()."
@@ -606,7 +652,7 @@ function system_dhcpleases_configure() {
 			sigkillbyname('dhcpleases', "TERM");
 		}
 		@unlink($pidfile);
-		mwexec("/usr/local/sbin/dhcpleases -l {$g['dhcpd_chroot_path']}/var/db/dhcpd.leases -d {$config['system']['domain']} -p {$g['varrun_path']}/{$dns_pid} {$unbound_conf} -h {$g['etc_path']}/hosts");
+		mwexec("/usr/local/sbin/dhcpleases -l {$g['dhcpd_chroot_path']}/var/db/dhcpd.leases -d {$config['system']['domain']} -p {$g['varrun_path']}/{$dns_pid} {$unbound_conf} -h {$g['varetc_path']}/hosts");
 	} elseif (isvalidpid($pidfile)) {
 		sigkillbypid($pidfile, "TERM");
 		@unlink($pidfile);
@@ -719,8 +765,12 @@ function system_routing_configure($interface = "") {
 			$srinterfacegw = $gateway['interface'];
 			if (is_ipaddr($srgatewayip) && !empty($srinterfacegw)) {
 				$inet = (!is_ipaddrv4($srgatewayip) ? "-inet6" : "-inet");
-				route_add_or_change("{$inet} {$srgatewayip} " .
-				    "-iface {$srinterfacegw}");
+				$cmd = "/sbin/route change {$inet} " . escapeshellarg($srgatewayip) . " ";
+				mwexec($cmd . "-iface " . escapeshellarg($srinterfacegw));
+				if (isset($config['system']['route-debug'])) {
+					$mt = microtime();
+					log_error("ROUTING debug: $mt - $cmd -iface $srinterfacegw ");
+				}
 			}
 		}
 	}
@@ -730,7 +780,7 @@ function system_routing_configure($interface = "") {
 			;
 		} else if (is_ipaddrv4($gatewayip)) {
 			log_error(sprintf(gettext("ROUTING: setting default route to %s"), $gatewayip));
-			route_add_or_change("-inet default {$gatewayip}");
+			mwexec("/sbin/route change -inet default " . escapeshellarg($gatewayip));
 		}
 
 		if (!empty($interface) && $interface != $interfacegwv6) {
@@ -741,7 +791,7 @@ function system_routing_configure($interface = "") {
 				$ifscope = "%{$defaultifv6}";
 			}
 			log_error(sprintf(gettext("ROUTING: setting IPv6 default route to %s"), $gatewayipv6 . $ifscope));
-			route_add_or_change("-inet6 default {$gatewayipv6}{$ifscope}");
+			mwexec("/sbin/route change -inet6 default " . escapeshellarg("{$gatewayipv6}{$ifscope}"));
 		}
 	}
 
@@ -832,7 +882,7 @@ function system_staticroutes_configure($interface = "", $update_dns = false) {
 
 				$inet = (is_subnetv6($ip) ? "-inet6" : "-inet");
 
-				$cmd = "{$inet} {$blackhole} {$ip} ";
+				$cmd = "/sbin/route change {$inet} {$blackhole} " . escapeshellarg($ip) . " ";
 
 				if (is_subnet($ip)) {
 					if (is_ipaddr($gatewayip)) {
@@ -840,9 +890,17 @@ function system_staticroutes_configure($interface = "", $update_dns = false) {
 							// add interface scope for link local v6 routes
 							$gatewayip .= "%$interfacegw";
 						}
-						route_add_or_change($cmd . $gatewayip);
+						mwexec($cmd . escapeshellarg($gatewayip));
+						if (isset($config['system']['route-debug'])) {
+							$mt = microtime();
+							log_error("ROUTING debug: $mt - $cmd $gatewayip");
+						}
 					} else if (!empty($interfacegw)) {
-						route_add_or_change($cmd . "-iface {$interfacegw}");
+						mwexec($cmd . "-iface " . escapeshellarg($interfacegw));
+						if (isset($config['system']['route-debug'])) {
+							$mt = microtime();
+							log_error("ROUTING debug: $mt - $cmd -iface $interfacegw ");
+						}
 					}
 				}
 			}
@@ -937,10 +995,6 @@ function clear_log_file($logfile = "/var/log/system.log", $restart_syslogd = tru
 	if ($restart_syslogd) {
 		system_syslogd_start();
 	}
-	// Bug #6915
-	if ($logfile == "/var/log/resolver.log") {
-		services_unbound_configure(true);
-	}
 }
 
 function clear_all_log_files($restart = false) {
@@ -959,7 +1013,6 @@ function clear_all_log_files($restart = false) {
 			require_once('services.inc');
 		}
 		services_dhcpd_configure();
-		// Bug #6915
 		services_unbound_configure(false);
 	}
 	return;
@@ -1149,7 +1202,7 @@ EOD;
 EOD;
 		}
 		/* write syslog.conf */
-		if (!@file_put_contents("{$g['etc_path']}/syslog.conf", $syslogconf)) {
+		if (!@file_put_contents("{$g['varetc_path']}/syslog.conf", $syslogconf)) {
 			printf(gettext("Error: cannot open syslog.conf in system_syslogd_start().%s"), "\n");
 			unset($syslogconf);
 			return 1;
@@ -1174,7 +1227,7 @@ EOD;
 			}
 		}
 
-		$syslogd_extra = "-f {$g['etc_path']}/syslog.conf {$sourceip}";
+		$syslogd_extra = "-f {$g['varetc_path']}/syslog.conf {$sourceip}";
 	}
 
 	$log_sockets = array("{$g['dhcpd_chroot_path']}/var/run/log");
@@ -1552,7 +1605,7 @@ EOD;
 
 	$fd = fopen("{$filename}", "w");
 	if (!$fd) {
-		printf(gettext('Error: cannot open %1$s in system_generate_nginx_config().%2$s'), $filename, "\n");
+		printf(gettext("Error: cannot open %s in system_generate_nginx_config().%s"), $filename, "\n");
 		return 1;
 	}
 	fwrite($fd, $nginx_config);
@@ -1606,9 +1659,11 @@ function system_timezone_configure() {
 
 	/* extract appropriate timezone file */
 	$timezone = (isset($syscfg['timezone']) ? $syscfg['timezone'] : $g['default_timezone']);
+	conf_mount_rw();
 	/* DO NOT remove \n otherwise tzsetup will fail */
 	@file_put_contents("/var/db/zoneinfo", $timezone . "\n");
 	mwexec("/usr/sbin/tzsetup -r");
+	conf_mount_ro();
 
 	if (platform_booting()) {
 		echo gettext("done.") . "\n";
@@ -1624,6 +1679,7 @@ function system_ntp_setup_gps($serialport) {
 		return false;
 	}
 
+	conf_mount_rw();
 	// Create symlink that ntpd requires
 	unlink_if_exists($gps_device);
 	@symlink($serialport, $gps_device);
@@ -1668,6 +1724,7 @@ function system_ntp_setup_gps($serialport) {
 		@file_put_contents("/etc/remote", "gps0:dv={$serialport}:br#{$gpsbaud}:pa=none:\n", FILE_APPEND);
 	}
 
+	conf_mount_ro();
 
 	return true;
 }
@@ -1682,10 +1739,12 @@ function system_ntp_setup_pps($serialport) {
 		return false;
 	}
 
+	conf_mount_rw();
 	// Create symlink that ntpd requires
 	unlink_if_exists($pps_device);
 	@symlink($serialport, $pps_device);
 
+	conf_mount_ro();
 
 	return true;
 }
@@ -1836,20 +1895,11 @@ function system_ntp_configure() {
 		$ntpcfg .= "fudge 127.127.1.0 stratum 12\n";
 	}
 	/* End GPS configuration */
-	$auto_pool_suffix = "pool.ntp.org";
-	$have_pools = false;
+
 	$ntpcfg .= "\n\n# Upstream Servers\n";
 	/* foreach through ntp servers and write out to ntpd.conf */
 	foreach (explode(' ', $config['system']['timeservers']) as $ts) {
-		if ((substr_compare($ts, $auto_pool_suffix, strlen($ts) - strlen($auto_pool_suffix), strlen($auto_pool_suffix)) === 0)
-		    || substr_count($config['ntpd']['ispool'], $ts)) {
-			$ntpcfg .= 'pool ';
-			$have_pools = true;
-		} else {
-			$ntpcfg .= 'server ';
-		}
-
-		$ntpcfg .= "{$ts} iburst maxpoll 9";
+		$ntpcfg .= "server {$ts} iburst maxpoll 9";
 		if (substr_count($config['ntpd']['prefer'], $ts)) {
 			$ntpcfg .= ' prefer';
 		}
@@ -1925,27 +1975,6 @@ function system_ntp_configure() {
 	if (empty($config['ntpd']['notrap'])) { /*note: this one works backwards */
 		$ntpcfg .= ' notrap';
 	}
-
-	/* Pools require "restrict source" and cannot contain "nopeer". */
-	if ($have_pools) {
-		$ntpcfg .= "\nrestrict source";
-		if (empty($config['ntpd']['kod'])) { /*note: this one works backwards */
-			$ntpcfg .= ' kod limited';
-		}
-		if (empty($config['ntpd']['nomodify'])) { /*note: this one works backwards */
-			$ntpcfg .= ' nomodify';
-		}
-		if (!empty($config['ntpd']['noquery'])) {
-			$ntpcfg .= ' noquery';
-		}
-		if (!empty($config['ntpd']['noserve'])) {
-			$ntpcfg .= ' noserve';
-		}
-		if (empty($config['ntpd']['notrap'])) { /*note: this one works backwards */
-			$ntpcfg .= ' notrap';
-		}
-	}
-
 	/* Custom Access Restrictions */
 	if (is_array($config['ntpd']['restrictions']) && is_array($config['ntpd']['restrictions']['row'])) {
 		$networkacl = $config['ntpd']['restrictions']['row'];
@@ -2030,7 +2059,7 @@ function system_ntp_configure() {
 
 	/* if /var/empty does not exist, create it */
 	if (!is_dir("/var/empty")) {
-		mkdir("/var/empty", 0555, true);
+		mkdir("/var/empty", 0775, true);
 	}
 
 	/* start opentpd, set time now and use /var/etc/ntpd.conf */
@@ -2057,16 +2086,12 @@ function system_reboot() {
 	mwexec("nohup /etc/rc.reboot > /dev/null 2>&1 &");
 }
 
-function system_reboot_sync($reroot=false) {
+function system_reboot_sync() {
 	global $g;
-
-	if ($reroot) {
-		$args = " -r ";
-	}
 
 	system_reboot_cleanup();
 
-	mwexec("/etc/rc.reboot {$args} > /dev/null 2>&1");
+	mwexec("/etc/rc.reboot > /dev/null 2>&1");
 }
 
 function system_reboot_cleanup() {
@@ -2372,11 +2397,11 @@ function system_identify_specific_platform() {
 				return (array('name' => 'Hyper-V', 'descr' => 'Hyper-V Virtual Machine'));
 			}
 			break;
-		case 'VMware Virtual Platform':
-			if ($maker[0] == "VMware, Inc.") {
-				return (array('name' => 'VMware', 'descr' => 'VMware Virtual Machine'));
-			}
-			break;
+	}
+
+	/* the rest of the code only deals with 'embedded' platforms */
+	if ($g['platform'] != 'nanobsd') {
+		return array('name' => $g['platform'], 'descr' => $g['platform']);
 	}
 
 	if (strpos($hw_model, "PC Engines WRAP") !== false) {
@@ -2407,7 +2432,8 @@ function system_identify_specific_platform() {
 	}
 	unset($dmesg_boot);
 
-	return array('name' => $g['platform'], 'descr' => $g['platform']);
+	/* unknown embedded platform */
+	return array('name' => 'embedded', 'descr' => gettext('embedded (unknown)'));
 }
 
 function system_get_dmesg_boot() {
