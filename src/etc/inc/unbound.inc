@@ -5,7 +5,7 @@
  * part of pfSense (https://www.pfsense.org)
  * Copyright (c) 2015 Warren Baker <warren@percol8.co.za>
  * Copyright (c) 2015-2016 Rubicon Communications, LLC (Netgate)
- * All rights reserved.
+  * All rights reserved.
  *
  * originally part of m0n0wall (http://m0n0.ch/wall)
  * Copyright (c) 2003-2004 Manuel Kasper <mk@neon1.net>.
@@ -596,7 +596,7 @@ function unbound_add_host_entries($cfgsubdir = "") {
 			$added_ptr[$host['ipaddr']] = true;
 		}
 		$unbound_entries .= "local-data: \"{$host['fqdn']} {$type} {$host['ipaddr']}\"\n";
-		if (isset($host['name'])) {
+		if (isset($host['name'])) && ($host['add_unqualified']) {
 			$unbound_entries .= "local-data: \"{$host['name']} {$type} {$host['ipaddr']}\"\n";
 		}
 	}

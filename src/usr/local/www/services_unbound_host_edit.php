@@ -79,6 +79,7 @@ function hosts_sort() {
 }
 
 require_once("guiconfig.inc");
+require_once("system.inc");
 
 if (!is_array($config['unbound']['hosts'])) {
 	$config['unbound']['hosts'] = array();
@@ -96,6 +97,8 @@ if (isset($_POST['id']) && is_numericint($_POST['id'])) {
 if (isset($id) && $a_hosts[$id]) {
 	$pconfig['host'] = $a_hosts[$id]['host'];
 	$pconfig['domain'] = $a_hosts[$id]['domain'];
+	$pconfig['track_system_domain'] = $a_hosts[$id]['track_system_domain'];
+	$pconfig['add_unqualified'] = $a_hosts[$id]['add_unqualified'];
 	$pconfig['ip'] = $a_hosts[$id]['ip'];
 	$pconfig['descr'] = $a_hosts[$id]['descr'];
 	$pconfig['aliases'] = $a_hosts[$id]['aliases'];
@@ -191,6 +194,8 @@ if ($_POST) {
 		$hostent = array();
 		$hostent['host'] = $_POST['host'];
 		$hostent['domain'] = $_POST['domain'];
+		$hostent['track_system_domain'] = $_POST['track_system_domain'];
+		$hostent['add_unqualified'] = $_POST['add_unqualified'];
 		$hostent['ip'] = $_POST['ip'];
 		$hostent['descr'] = $_POST['descr'];
 		$hostent['aliases']['item'] = $aliases;
@@ -256,6 +261,24 @@ $section->addInput(new Form_Input(
 	$pconfig['domain']
 ))->setHelp('Domain of the host' . '<br />' .
 			'e.g.: "example.com"');
+
+$group = new Form_Group('Options');
+
+$group->add(new Form_Checkbox(
+	'track_system_domain',
+	'track_system_domain',
+	'Automatically track system domain',
+	$pconfig['track_system_domain']
+))->setHelp('The domain will be dynamically updated based on the setting in %1$sSystem &gt; General Setup%2$s','<a href="system.php">','</a>');
+
+$group->add(new Form_Checkbox(
+	'add_unqualified',
+	null,
+	'Also add unqualified (short) hostname',
+	$pconfig['add_unqualified']
+))->setHelp('Creates an entry for e.g. "foo" in addition to "foo.example.com"');
+
+$section->add($group);
 
 $section->addInput(new Form_IpAddress(
 	'ip',
@@ -338,5 +361,25 @@ $form->addGlobal(new Form_Button(
 
 $form->add($section);
 print($form);
+?>
 
-include("foot.inc");
+<script type="text/javascript">
+//<![CDATA[
+events.push(function() {
+	function setDomainFromSystem() {
+		var s_track = $('#track_system_domain').prop('checked');
+		if (s_track) {
+			$('#domain').val('<?=$config['system']['domain'];?>');
+		} else {
+			$('#domain').val('<?=$pconfig['domain'];?>');
+		}
+	}
+
+	$('#track_system_domain').click(function () {
+		setDomainFromSystem();
+	});
+});
+//]]>
+</script>
+
+<?php include("foot.inc");
