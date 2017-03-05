@@ -4175,7 +4175,7 @@ function interface_dhcpv6_configure($interface = "wan", $wancfg) {
 		 * ( it does not background, it exits! ) It will launch dhcp6c
 		 * if dhcpwihtoutra is not set
 		 */
-		mwexec("/usr/sbin/rtsold -1 " .
+		mwexec("/usr/sbin/rtsold " .
 		    "-p {$g['varrun_path']}/rtsold_{$wanif}.pid " .
 		    "-O {$g['varetc_path']}/rtsold_{$wanif}_script.sh " .
 		    $wanif);
