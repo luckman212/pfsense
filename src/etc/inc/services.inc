@@ -2237,6 +2237,15 @@ function services_unbound_configure($restart_dhcp = true) {
 	// kill any running Unbound instance
 	if (file_exists("{$g['varrun_path']}/unbound.pid")) {
 		sigkillbypid("{$g['varrun_path']}/unbound.pid", "TERM");
+
+		for ($i=1; $i <= 30; $i++) {
+			exec("/bin/pgrep unbound 2>&1", $output, $retval);
+			if ($retval != 1) {
+				sleep(1);
+			} else {
+				break;
+			}
+		}
 	}
 
 	if (isset($config['unbound']['enable'])) {
