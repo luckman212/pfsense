@@ -209,6 +209,23 @@ if (!is_ipaddr($oldip) || $curwanip != $oldip || !is_ipaddrv4($config['interface
 		}
 	}
 
+	/* EXPERIMENTAL CODE !!
+	 * try to trigger rtsold or dhcp6c after an IP change on an interface that is set to dhcp6
+	 */
+	if (interface_has_dhcp($interface, $family = 6)) {
+		log_codepath("iface {$interface} is set to dhcp6",__FILE__,__FUNCTION__,__LINE__);
+		$wancfg = $config['interfaces'][$interface];
+		if (!isset($wancfg['dhcp6withoutra'])) {
+			// run rtsold
+			log_codepath("running rtsold for {$interface}",__FILE__,__FUNCTION__,__LINE__);
+			run_rtsold_process($interface,$wancfg);
+		} else {
+			// run dhcp6c
+			log_codepath("running dhcp6c for {$interface}",__FILE__,__FUNCTION__,__LINE__);
+			run_dhcp6client_process($interface,$wancfg);
+		}
+	}
+
 	/*
 	 * Some services (e.g. dyndns, see ticket #4066) depend on
 	 * filter_configure() to be called before, otherwise pass out

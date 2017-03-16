@@ -1626,6 +1626,27 @@ function log_error($error) {
 	return;
 }
 
+/****f* util/log_codepath
+* NAME
+*   log_codepath  - Sends a debug message to syslog to help trace code paths.
+* INPUTS
+*   $desc      - description of what should be happening in this code path
+*   $file      - filename of the caller
+*   $func      - function name of the caller
+*   $line      - line number within file
+* RESULT
+*   null
+******/
+function log_codepath($desc = "none", $file = "???", $func = "???", $line = "???") {
+	if (!empty($func)) {
+		$codepath = "[CODEPATH] $file @L$line --> $func(): $desc";
+	} else {
+		$codepath = "[CODEPATH] $file @L$line: $desc";
+	}
+	syslog(LOG_ERR, $codepath);
+	return;
+}
+
 /****f* util/log_auth
 * NAME
 *   log_auth   - Sends a string to syslog as LOG_AUTH facility
