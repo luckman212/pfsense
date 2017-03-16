@@ -167,6 +167,8 @@ function filter_pflog_start($kill_first = false) {
 function filter_configure() {
 	global $g;
 
+	log_codepath("called",__FILE__,__FUNCTION__,__LINE__);
+
 	if (isset($config['system']['developerspew'])) {
 		$mt = microtime();
 		echo "filter_configure() being called $mt\n";

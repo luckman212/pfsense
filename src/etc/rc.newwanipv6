@@ -54,6 +54,8 @@ if (isset($_GET['interface'])) {
 
 log_error("rc.newwanipv6: Info: starting on {$argument}.");
 
+log_codepath("called with {$argument}",__FILE__,__FUNCTION__,__LINE__);
+
 if (empty($argument)) {
 	$interface = "wan";
 	$interface_real = get_real_interface($interface, "inet6");

@@ -1001,7 +1001,7 @@ function return_gateway_groups_array() {
 							touch("/tmp/.down.{$gwname}");
 							log_error($msg);
 							notify_via_growl($msg);
-							notify_via_smtp($msg);
+							//notify_via_smtp($msg);
 						}
 					} else {
 						$pluginparams['event'] = 'gateway.up';
@@ -1015,7 +1015,7 @@ function return_gateway_groups_array() {
 							$msg .= "\n".implode("|", $status);
 							log_error($msg);
 							notify_via_growl($msg);
-							notify_via_smtp($msg);
+							//notify_via_smtp($msg);
 						}
 					}
 					if (isset($gateways_arr[$gwname]['interface']))
