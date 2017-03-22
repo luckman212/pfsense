@@ -441,10 +441,10 @@ events.push(function() {
 			<thead>
 				<tr>
 					<th><?=gettext("Host")?></th>
-					<th><?=gettext("Domain")?></th>
+					<th><?=gettext("Parent domain of host")?></th>
 					<th><?=gettext("Track")?></th>
 					<th><?=gettext("Unqual")?></th>
-					<th><?=gettext("IP")?></th>
+					<th><?=gettext("IP to return for host")?></th>
 					<th><?=gettext("Description")?></th>
 					<th><?=gettext("Actions")?></th>
 				</tr>
