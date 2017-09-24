@@ -648,6 +648,10 @@ function return_gateways_array($disabled = false, $localhost = false, $inactive 
 				$gateway['no_defgw_switch'] = true;
 			}
 
+			if (isset($gateway['notifications_disable'])) {
+				$gateway['notifications_disable'] = true;
+			}
+
 			/* include the gateway index as the attribute */
 			$gateway['attribute'] = $i;
 
@@ -1046,8 +1050,10 @@ function return_gateway_groups_array() {
 							$msg .= "\n".implode("|", $status);
 							touch("/tmp/.down.{$gwname}");
 							log_error($msg);
-							notify_via_growl($msg);
-							notify_via_smtp($msg);
+							if (!isset($gateways_arr[$gwname]['notifications_disable'])) {
+								notify_via_growl($msg);
+								notify_via_smtp($msg);
+							}
 						}
 					} else {
 						$pluginparams['event'] = 'gateway.up';
@@ -1060,8 +1066,10 @@ function return_gateway_groups_array() {
 							$msg = sprintf(gettext('MONITOR: %1$s is available now, adding to routing group %2$s'), $gwname, $group['name']);
 							$msg .= "\n".implode("|", $status);
 							log_error($msg);
-							notify_via_growl($msg);
-							notify_via_smtp($msg);
+							if (!isset($gateways_arr[$gwname]['notifications_disable'])) {
+								notify_via_growl($msg);
+								notify_via_smtp($msg);
+							}
 						}
 					}
 					if (isset($gateways_arr[$gwname]['interface']))
@@ -1773,6 +1781,10 @@ function save_gateway($gateway_settings, $realid = "") {
 
 	if ($gateway_settings['no_defgw_switch'] == "yes" || $gateway_settings['no_defgw_switch'] == "on") {
 		$gateway['no_defgw_switch'] = true;
+	}
+
+	if ($gateway_settings['notifications_disable'] == "yes" || $gateway_settings['notifications_disable'] == "on") {
+		$gateway['notifications_disable'] = true;
 	}
 
 	if ($gateway_settings['defaultgw'] == "yes" || $gateway_settings['defaultgw'] == "on") {
