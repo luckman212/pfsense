@@ -19,6 +19,16 @@
 # limitations under the License.
 
 if [ "${dev_type}" = "tun" ]; then
+
+	multivpnfix=$(grep -c "#multivpnfix" ${config})
+	if [ "$multivpnfix" -eq 1 ]; then
+		gw=$(/usr/bin/printf '%s' "${ifconfig_local}" | /usr/bin/awk -F. '{ print $1"."$2"."$3".1" }')
+		mask=255.255.255.255
+		/sbin/ifconfig ${1} ${ifconfig_local} ${gw} mtu ${tun_mtu} netmask ${mask} up
+	else
+		gw=${5}
+	fi
+
 	if [ -n "${route_vpn_gateway}" ]; then
 		/bin/echo ${route_vpn_gateway} > /tmp/${1}_router
 	elif [ -n "${ifconfig_remote}" ]; then
@@ -26,7 +36,7 @@ if [ "${dev_type}" = "tun" ]; then
 	elif [ -n "${ifconfig_local}" ]; then
 		/bin/echo ${ifconfig_local} > /tmp/${1}_router
 	else
-		/bin/echo ${5} > /tmp/${1}_router
+		/bin/echo ${gw} > /tmp/${1}_router
 	fi
 
 	if [ -n "${route_ipv6_gateway_1}" ]; then
