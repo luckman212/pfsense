@@ -796,7 +796,7 @@ function system_staticroutes_configure($interface = "", $update_dns = false) {
 			if (isvalidpid("{$g['varrun_path']}/filterdns-route.pid")) {
 				sigkillbypid("{$g['varrun_path']}/filterdns-route.pid", "HUP");
 			} else {
-				mwexec("/usr/local/sbin/filterdns -p {$g['varrun_path']}/filterdns-route.pid -i {$interval} -c {$g['varetc_path']}/filterdns-route.hosts -d 1");
+				mwexec("/usr/local/sbin/filterdns -p {$g['varrun_path']}/filterdns-route.pid -i {$interval} -c {$g['varetc_path']}/filterdns-route.hosts -d 10");
 			}
 		} else {
 			killbypid("{$g['varrun_path']}/filterdns-route.pid");

@@ -497,7 +497,7 @@ function filter_configure_sync($delete_states_if_needed = true) {
 				} else {
 					$resolve_interval = 300;
 				}
-				mwexec("/usr/local/sbin/filterdns -p {$g['varrun_path']}/filterdns.pid -i {$resolve_interval} -c {$g['varetc_path']}/filterdns.conf -d 1");
+				mwexec("/usr/local/sbin/filterdns -p {$g['varrun_path']}/filterdns.pid -i {$resolve_interval} -c {$g['varetc_path']}/filterdns.conf -d 10");
 			}
 		} else {
 			killbypid("{$g['varrun_path']}/filterdns.pid");

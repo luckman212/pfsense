@@ -1591,7 +1591,7 @@ EOD;
 		if (isvalidpid("{$g['varrun_path']}/filterdns-ipsec.pid")) {
 			sigkillbypid("{$g['varrun_path']}/filterdns-ipsec.pid", "HUP");
 		} else {
-			mwexec("/usr/local/sbin/filterdns -p {$g['varrun_path']}/filterdns-ipsec.pid -i {$interval} -c {$g['varetc_path']}/ipsec/filterdns-ipsec.hosts -d 1");
+			mwexec("/usr/local/sbin/filterdns -p {$g['varrun_path']}/filterdns-ipsec.pid -i {$interval} -c {$g['varetc_path']}/ipsec/filterdns-ipsec.hosts -d 10");
 		}
 	} else {
 		killbypid("{$g['varrun_path']}/filterdns-ipsec.pid");
