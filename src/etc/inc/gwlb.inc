@@ -234,16 +234,19 @@ function setup_gateways_monitor() {
 			 * Add static routes for each gateway with their monitor IP
 			 * not strictly necessary but is a added level of protection.
 			 */
-			if (is_ipaddrv4($gateway['gateway']) && $gateway['monitor'] != $gateway['gateway']) {
-				log_error(sprintf(gettext('Removing static route for monitor %1$s and adding a new route through %2$s'), $gateway['monitor'], $gateway['gateway']));
-				$route_to = "-host {$gateway['monitor']}";
-				if (interface_isppp_type($gateway['friendlyiface'])) {
-					route_add_or_change("{$route_to} -iface {$gateway['interface']}");
-				} else {
-					route_add_or_change("{$route_to} {$gateway['gateway']}");
+			/* TESTING: config option: do not add static routes to monitor IPs */
+			if (!isset($config['system']['no-dpinger-static-routes'])) {
+				if (is_ipaddrv4($gateway['gateway']) && $gateway['monitor'] != $gateway['gateway']) {
+					log_error(sprintf(gettext('Removing static route for monitor %1$s and adding a new route through %2$s'), $gateway['monitor'], $gateway['gateway']));
+					$route_to = "-host {$gateway['monitor']}";
+					if (interface_isppp_type($gateway['friendlyiface'])) {
+						route_add_or_change("{$route_to} -iface {$gateway['interface']}");
+					} else {
+						route_add_or_change("{$route_to} {$gateway['gateway']}");
+					}
+	
+					pfSense_kill_states("0.0.0.0/0", $gateway['monitor'], $gateway['interface'], "icmp");
 				}
-
-				pfSense_kill_states("0.0.0.0/0", $gateway['monitor'], $gateway['interface'], "icmp");
 			}
 		} else if ($gateway['ipprotocol'] == "inet6") { // This is an IPv6 gateway...
 			if (is_linklocal($gateway['gateway']) &&
@@ -275,16 +278,19 @@ function setup_gateways_monitor() {
 			 * Add static routes for each gateway with their monitor IP
 			 * not strictly necessary but is a added level of protection.
 			 */
-			if ($gateway['gateway'] != $gateway['monitor']) {
-				log_error(sprintf(gettext('Removing static route for monitor %1$s and adding a new route through %2$s'), $gateway['monitor'], $gateway['gateway']));
-				$route_to = "-host -inet6 {$gateway['monitor']}";
-				if (interface_isppp_type($gateway['friendlyiface'])) {
-					route_add_or_change("{$route_to} -iface {$gateway['interface']}");
-				} else {
-					route_add_or_change("{$route_to} {$gateway['gateway']}");
+			/* TESTING: config option: do not add static routes to monitor IPs */
+			if (!isset($config['system']['no-dpinger-static-routes'])) {
+				if ($gateway['gateway'] != $gateway['monitor']) {
+					log_error(sprintf(gettext('Removing static route for monitor %1$s and adding a new route through %2$s'), $gateway['monitor'], $gateway['gateway']));
+					$route_to = "-host -inet6 {$gateway['monitor']}";
+					if (interface_isppp_type($gateway['friendlyiface'])) {
+						route_add_or_change("{$route_to} -iface {$gateway['interface']}");
+					} else {
+						route_add_or_change("{$route_to} {$gateway['gateway']}");
+					}
+	
+					pfSense_kill_states("::0.0.0.0/0", $gateway['monitor'], $gateway['interface'], "icmpv6");
 				}
-
-				pfSense_kill_states("::0.0.0.0/0", $gateway['monitor'], $gateway['interface'], "icmpv6");
 			}
 		} else {
 			continue;
