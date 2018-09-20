@@ -991,7 +991,7 @@ foreach ($pconfig['numberoptions']['item'] as $item) {
 		null,
 		'text',
 		base64_decode($item['value'])
-	))->setHelp($counter == $last ? 'Value':null);
+	))->setWidth(4)->setHelp($counter == $last ? 'Value':null);
 
 	$btn = new Form_Button(
 		'deleterow' . $counter,

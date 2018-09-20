@@ -1415,7 +1415,7 @@ foreach ($pconfig['numberoptions']['item'] as $item) {
 		null,
 		'text',
 		$value
-	))->setHelp($numrows == $counter ? 'Value':null);
+	))->setWidth(4)->setHelp($numrows == $counter ? 'Value':null);
 
 	$group->add(new Form_Button(
 		'deleterow' . $counter,
