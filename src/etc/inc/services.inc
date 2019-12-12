@@ -256,38 +256,38 @@ function services_radvd_configure($blacklist = array()) {
 					if (is_ipaddrv6($server)) {
 						$dnslist[] = $server;
 					}
-			}
-		} elseif (!isset($dhcpv6ifconf['rasamednsasdhcp6']) && isset($dhcpv6ifconf['radnsserver']) && is_array($dhcpv6ifconf['radnsserver'])) {
-			foreach ($dhcpv6ifconf['radnsserver'] as $server) {
-				if (is_ipaddrv6($server)) {
-					$dnslist[] = $server;
+				}
+			} elseif (!isset($dhcpv6ifconf['rasamednsasdhcp6']) && isset($dhcpv6ifconf['radnsserver']) && is_array($dhcpv6ifconf['radnsserver'])) {
+				foreach ($dhcpv6ifconf['radnsserver'] as $server) {
+					if (is_ipaddrv6($server)) {
+						$dnslist[] = $server;
+					}
+				}
+			} elseif (isset($config['dnsmasq']['enable']) || isset($config['unbound']['enable'])) {
+				$dnslist[] = get_interface_ipv6($realif);
+			} elseif (is_array($config['system']['dnsserver']) && !empty($config['system']['dnsserver'])) {
+				foreach ($config['system']['dnsserver'] as $server) {
+					if (is_ipaddrv6($server)) {
+						$dnslist[] = $server;
+					}
 				}
 			}
-		} elseif (isset($config['dnsmasq']['enable']) || isset($config['unbound']['enable'])) {
-			$dnslist[] = get_interface_ipv6($realif);
-		} elseif (is_array($config['system']['dnsserver']) && !empty($config['system']['dnsserver'])) {
-			foreach ($config['system']['dnsserver'] as $server) {
-				if (is_ipaddrv6($server)) {
-					$dnslist[] = $server;
+			if (count($dnslist) > 0) {
+				$dnsstring = implode(" ", $dnslist);
+				if ($dnsstring <> "") {
+					$radvdconf .= "\tRDNSS {$dnsstring} { };\n";
 				}
 			}
-		}
-		if (count($dnslist) > 0) {
-			$dnsstring = implode(" ", $dnslist);
-			if ($dnsstring <> "") {
-				$radvdconf .= "\tRDNSS {$dnsstring} { };\n";
-			}
-		}
 
-		$searchlist = array();
-		$domainsearchlist = explode(';', $dhcpv6ifconf['radomainsearchlist']);
-		foreach ($domainsearchlist as $sd) {
-			$sd = trim($sd);
-			if (is_hostname($sd)) {
-				$searchlist[] = $sd;
+			$searchlist = array();
+			$domainsearchlist = explode(';', $dhcpv6ifconf['radomainsearchlist']);
+			foreach ($domainsearchlist as $sd) {
+				$sd = trim($sd);
+				if (is_hostname($sd)) {
+					$searchlist[] = $sd;
+				}
 			}
-		}
-		if (count($searchlist) > 0) {
+			if (count($searchlist) > 0) {
 				$searchliststring = trim(implode(" ", $searchlist));
 			}
 			if (!empty($dhcpv6ifconf['domain'])) {
@@ -378,12 +378,12 @@ function services_radvd_configure($blacklist = array()) {
 			} elseif (is_array($config['system']['dnsserver']) && !empty($config['system']['dnsserver'])) {
 				foreach ($config['system']['dnsserver'] as $server) {
 					if (is_ipaddrv6($server)) {
-					$dnslist[] = $server;
+						$dnslist[] = $server;
+					}
 				}
 			}
-		}
-		if (count($dnslist) > 0) {
-			$dnsstring = implode(" ", $dnslist);
+			if (count($dnslist) > 0) {
+				$dnsstring = implode(" ", $dnslist);
 				if (!empty($dnsstring)) {
 					$radvdconf .= "\tRDNSS {$dnsstring} { };\n";
 				}
