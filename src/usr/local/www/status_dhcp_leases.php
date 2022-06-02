@@ -244,7 +244,7 @@ foreach ($leases['lease'] as $data):
 			if (is_inrange_v4($data['ip'], $dhcpifconf['range']['from'], $dhcpifconf['range']['to'])) {
 				$data['if'] = $dhcpif;
 				$dlskey = $dhcpif . "-" . $dhcpifconf['range']['from'];
-				$dhcp_leases_subnet_counter[$dlskey]['dhcpif'] = $dhcpif;
+				$dhcp_leases_subnet_counter[$dlskey]['dhcpif'] = isset($dhcpif) ? $dhcpif : gettext('unknown');
 				$dhcp_leases_subnet_counter[$dlskey]['from'] = $dhcpifconf['range']['from'];
 				$dhcp_leases_subnet_counter[$dlskey]['to'] = $dhcpifconf['range']['to'];
 				$dhcp_leases_subnet_counter[$dlskey]['count'] += 1;
