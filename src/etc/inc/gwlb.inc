@@ -219,9 +219,13 @@ function setup_gateways_monitor() {
 			}
 		}
 
-		/* if the monitor address is already used before, skip */
-		if (in_array($gateway['monitor'], $monitor_ips)) {
-			continue;
+		/* if the monitor address is already used before, and the
+		 * dont_add_static_route config setting is not enabled, skip
+		 */
+		if (!isset($config['system']['dpinger_dont_add_static_routes']) &&
+				!isset($gateway['dpinger_dont_add_static_route']) &&
+				in_array($gateway['monitor'], $monitor_ips)) {
+					continue;
 		}
 
 		/* Interface ip is needed since dpinger will bind a socket to it.
@@ -1938,9 +1942,12 @@ function validate_gateway($gateway_settings, $id = "", $parent_ip = "", $parent_
 				}
 			}
 			if (is_ipaddr($gateway_settings['monitor'])) {
-				if (($gateway['monitor'] <> "") && ($gateway_settings['monitor'] == $gateway['monitor']) && ($gateway['attribute'] !== "system")) {
-					$input_errors[] = sprintf(gettext('The monitor IP address "%s" is already in use. A different monitor IP must be chosen.'), $gateway_settings['monitor']);
-					break;
+				if (!isset($config['system']['dpinger_dont_add_static_routes']) &&
+						!isset($gateway['dpinger_dont_add_static_route'])) {
+					if (($gateway['monitor'] <> "") && ($gateway_settings['monitor'] == $gateway['monitor']) && ($gateway['attribute'] !== "system")) {
+						$input_errors[] = sprintf(gettext('The monitor IP address "%s" is already in use. A different monitor IP must be chosen.'), $gateway_settings['monitor']);
+						break;
+					}
 				}
 			}
 		}
