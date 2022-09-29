@@ -5041,6 +5041,7 @@ function interface_dhcpv6_configure($ifconf = "wan", $ifcfg, $destroy = false) {
 			$dhcp6cscriptwithoutra .= "/usr/bin/logger -t dhcp6c \"dhcp6c renew, no change - bypassing update on {$wanif}\"\n";
 		}
 		$dhcp6cscriptwithoutra .= "esac\n";
+		$dhcp6cscriptwithoutra .= "/root/assign_gua_from_iapd.sh {$wanif}\n";
 		if (!@file_put_contents(
 		    "{$g['varetc_path']}/dhcp6c_{$interface}_dhcp6withoutra_script.sh",
 		    $dhcp6cscriptwithoutra)) {
@@ -5092,6 +5093,7 @@ function interface_dhcpv6_configure($ifconf = "wan", $ifcfg, $destroy = false) {
 			$dhcp6cscript .= "/bin/sleep 1\n";
 			$dhcp6cscript .= "/usr/local/sbin/fcgicli -f /etc/rc.newwanipv6 -d \"interface={$wanif}&dmnames=\${dmnames}&dmips=\${dmips}\"\n";
 		}
+		$dhcp6cscript .= "/root/assign_gua_from_iapd.sh {$wanif}\n";
 
 		/* Add wide-dhcp6c shell script here. Because we can not pass a argument to it. */
 		if (!@file_put_contents("{$g['varetc_path']}/dhcp6c_{$interface}_script.sh", $dhcp6cscript)) {
