@@ -207,6 +207,10 @@ function setup_gateways_monitor() {
 	}
 	$monitor_ips = array();
 	foreach ($gateways_arr as $gwname => $gateway) {
+
+		/* clean up down canary files */
+		unlink_if_exists("{$g['tmp_path']}/.down.{$gwname}");
+
 		/* Do not monitor if such was requested */
 		if (isset($gateway['monitor_disable'])) {
 			continue;

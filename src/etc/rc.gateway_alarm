@@ -29,6 +29,12 @@ if [ -z "$GW" ]; then
 	exit 1
 fi
 
+if [ "$alarm_flag" = 1 ]; then
+	touch /tmp/.down.${GW}
+else
+	rm /tmp/.down.${GW}
+fi
+
 print_rtt() {
 	usec=$1
 	usec_to_ms=$( echo "scale=3; ${usec}/1000" | bc -l )
