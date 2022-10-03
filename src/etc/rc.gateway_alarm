@@ -49,4 +49,6 @@ echo ">>> Gateway alarm: ${GW} (Addr:${alarm_addr} Alarm:${alarm_flag} RTT:$( pr
 # - "/etc/rc.openvpn", "interface=%s"
 # - "/etc/rc.filter_configure_sync"
 
+/etc/wgfix.sh "${GW}" "${alarm_flag}"
+
 exit $?
