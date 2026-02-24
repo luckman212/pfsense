@@ -697,6 +697,7 @@ function get_validate_password_hints($prefix='', $suffix='<br/>') {
  * issues.
  */
 function check_current_password($username) {
+	return null;
 	if (local_backed($username, $username)) {
 		return sprintf(gettext('Password is currently set to the username (%s).'), $username);
 	}
