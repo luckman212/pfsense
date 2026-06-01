@@ -2663,19 +2663,19 @@ function save_gateway($gateway_settings, $realid = "", $json = false) {
 		$a_gateway_item = config_get_path("gateways/gateway_item/{$realid}");
 		/* NOTE: If gateway ip is changed need to cleanup the old static interface route */
 		if ($gateway_settings['monitor'] != "dynamic" &&
-		    !empty($a_gateway_item) &&
-		    is_ipaddr($a_gateway_item['gateway']) &&
-		    $gateway['gateway'] != $a_gateway_item['gateway'] &&
-		    isset($a_gateway_item["nonlocalgateway"])) {
+			!empty($a_gateway_item) &&
+			is_ipaddr($a_gateway_item['gateway']) &&
+			$gateway['gateway'] != $a_gateway_item['gateway'] &&
+			isset($a_gateway_item["nonlocalgateway"])) {
 			route_del($a_gateway_item['gateway']);
 		}
 
-		/* NOTE: If monitor ip is changed need to cleanup the old static route */
+		/* NOTE: If monitor ip changed, or dpinger_dont_add_static_route is true (globally or per-gateway) remove the old static route */
 		if ($gateway_settings['monitor'] != "dynamic" &&
-		    !empty($a_gateway_item) &&
-		    is_ipaddr($a_gateway_item['monitor']) &&
-		    $gateway_settings['monitor'] != $a_gateway_item['monitor'] &&
-		    $gateway['gateway'] != $a_gateway_item['monitor']) {
+			!empty($a_gateway_item) &&
+			is_ipaddr($a_gateway_item['monitor']) &&
+			(isset($gateway['dpinger_dont_add_static_route']) || $skip_static_route ||
+			($gateway_settings['monitor'] != $a_gateway_item['monitor'] && $gateway['gateway'] != $a_gateway_item['monitor']))) {
 			route_del($a_gateway_item['monitor']);
 		}
 	}
