@@ -64,6 +64,8 @@ define('PFCONFIG_OPTION_LOGGING_INTERFACES', ['id' => 'pfc_optlogif', 'descripti
 define('PFCONFIG_OPTION_SKIP_INTERfACES', ['id' => 'pfc_optskipif', 'description' => 'Interfaces without pf filtering']);
 define('PFCONFIG_OPTION_KEEPCOUNTERS', ['id' => 'pfc_optkeepct', 'description' => 'Preserve rule counters across rule updates']);
 define('PFCONFIG_ETHERNET_CAPTIVE_PORTAL', ['id' => 'pfc_cpeth', 'description' => 'Ethernet rules for Captive Portal']);
+define('PFCONFIG_USER_ETHERNET', ['id' => 'pfc_usreth', 'description' => 'User-defined ethernet rules']);
+define('PFCONFIG_PACKAGE_ETHERNET', ['id' => 'pfc_pkgeth', 'description' => 'Ethernet rules for Captive Portal']);
 define('PFCONFIG_NORMALIZE_SCRUBBING', ['id' => 'pfc_normscrub', 'description' => 'Required rules for traffic normalization']);
 define('PFCONFIG_SHAPING_ALTQ', ['id' => 'pfc_altq', 'description' => 'Rules for traffic shaping with ALTQ']);
 define('PFCONFIG_ALL_NAT_RULES', ['id' => 'pfc_allnat', 'description' => 'Rules for Network Address Translation']);
@@ -82,6 +84,7 @@ define('PFCONFIG_NAT_REFLECTION_BINAT', ['id' => 'pfc_rbinat', 'description' => 
 define('PFCONFIG_PACKAGE_EARLY', ['id' => 'pfc_pkgearly', 'description' => 'Extra rules from packages']);
 define('PFCONFIG_RADIUS_OPENVPN', ['id' => 'pfc_ovpnrad', 'description' => 'Extra rules from OpenVPN RADIUS']);
 define('PFCONFIG_RADIUS_IPSEC', ['id' => 'pfc_ipsecrad', 'description' => 'Extra rules from IPsec RADIUS']);
+define('PFCONFIG_NEXUS', ['id' => 'pfc_nexus', 'description' => 'Rules for Nexus']);
 define('PFCONFIG_FILTER_BLOCK_IPV6', ['id' => 'pfc_block6', 'description' => 'Rules to block all IPv6 packets']);
 define('PFCONFIG_FILTER_BLOCK_NAT64_RESERVED', ['id' => 'pfc_nat64reserv', 'description' => 'Rules to block NAT64 translation for non-global IPv4 addresses']);
 define('PFCONFIG_FILTER_BLOCK_IPV4_LINKLOCAL', ['id' => 'pfc_block4ll', 'description' => 'Rules to block IPv4 link-local packets']);
@@ -140,6 +143,8 @@ define('PFCONFIG_CATEGORIES', [
 	PFCONFIG_OPTION_SKIP_INTERfACES['id'] => 'PFCONFIG_OPTION_SKIP_INTERfACES',
 	PFCONFIG_OPTION_KEEPCOUNTERS['id'] => 'PFCONFIG_OPTION_KEEPCOUNTERS',
 	PFCONFIG_ETHERNET_CAPTIVE_PORTAL['id'] => 'PFCONFIG_ETHERNET_CAPTIVE_PORTAL',
+	PFCONFIG_USER_ETHERNET['id'] => 'PFCONFIG_USER_ETHERNET',
+	PFCONFIG_PACKAGE_ETHERNET['id'] => 'PFCONFIG_PACKAGE_ETHERNET',
 	PFCONFIG_NORMALIZE_SCRUBBING['id'] => 'PFCONFIG_NORMALIZE_SCRUBBING',
 	PFCONFIG_SHAPING_ALTQ['id'] => 'PFCONFIG_SHAPING_ALTQ',
 	PFCONFIG_ALL_NAT_RULES['id'] => 'PFCONFIG_ALL_NAT_RULES',
@@ -158,6 +163,7 @@ define('PFCONFIG_CATEGORIES', [
 	PFCONFIG_PACKAGE_EARLY['id'] => 'PFCONFIG_PACKAGE_EARLY',
 	PFCONFIG_RADIUS_OPENVPN['id'] => 'PFCONFIG_RADIUS_OPENVPN',
 	PFCONFIG_RADIUS_IPSEC['id'] => 'PFCONFIG_RADIUS_IPSEC',
+	PFCONFIG_NEXUS['id'] => 'PFCONFIG_NEXUS',
 	PFCONFIG_FILTER_BLOCK_IPV6['id'] => 'PFCONFIG_FILTER_BLOCK_IPV6',
 	PFCONFIG_FILTER_BLOCK_NAT64_RESERVED['id'] => 'PFCONFIG_FILTER_BLOCK_NAT64_RESERVED',
 	PFCONFIG_FILTER_BLOCK_IPV4_LINKLOCAL['id'] => 'PFCONFIG_FILTER_BLOCK_IPV4_LINKLOCAL',
@@ -227,7 +233,14 @@ define("RULE_LABEL_ORDER", [
 	RULE_LABEL_KEY_DESCRIPTION => 'RULE_LABEL_KEY_DESCRIPTION'
 ]);
 
+// Alias tags.
+define("ALIAS_TAG_DELIMITER", ',');
+// Alias display limits.
+define('ALIAS_CONTENT_DISPLAY_PAGE_MAX', 20);
+define('ALIAS_CONTENT_DISPLAY_POPUP_MAX', 20);
+
 // Log prefixes
+define('LOG_PREFIX_NEXUS', 'Netgate Nexus');
 define('LOG_PREFIX_SYSTEM', 'System');
 define('LOG_PREFIX_UPGRADE', 'Upgrade');
 define('LOG_PREFIX_NOTICE', 'Notifications');
@@ -260,9 +273,6 @@ define('LOG_AUTH_EVENT_LOGOUT', 2);
 define('LOG_AUTH_EVENT_ERROR', 3);
 define('LOG_AUTH_EVENT_TIMEOUT', 4);
 
-// POSIX constants
-define('POSIX_EPERM', 1);
-
 /**
  * Get a list of valid rule label tags.
  *
@@ -271,7 +281,7 @@ define('POSIX_EPERM', 1);
  */
 function parse_rule_label_tags(string|array $tags): array {
 	if (is_string($tags)) {
-		$tags = array_filter(explode(RULE_LABEL_TAG_DELIMITER, $tags));
+		$tags = explode(RULE_LABEL_TAG_DELIMITER, $tags);
 	}
 
 	$new_tags = [];
@@ -460,6 +470,19 @@ function get_labels_string_from_rule_item(array $rule): string {
 }
 
 /**
+ * Get label tags from a config rule.
+ */
+function get_label_tags_from_rule_item(array $rule): array {
+	foreach (get_label_items_from_rule_item($rule) as $label_item) {
+		if ($label_item['name'] != RULE_LABEL_KEY_TAGS) {
+			continue;
+		}
+		return explode(RULE_LABEL_TAG_DELIMITER, $label_item['descr']);
+	}
+	return [];
+}
+
+/**
  * Get label tags from a pf rule.
  */
 function get_label_tags_from_rule_string(string $rule): array {
@@ -584,6 +607,15 @@ function set_label_tags_for_rule_string(string $rule, array $tags): string {
 	return $new_rule;
 }
 
+function is_filter_rule_managed(array $rule): bool {
+	foreach (get_label_tags_from_rule_item($rule) as $label_tag) {
+		if ($label_tag == 'automanaged') {
+			return true;
+		}
+	}
+	return false;
+}
+
 function v6_range_to_prefixlen(string $start, string $end): string|false {
 	$start_packed = inet_pton(Net_IPv6::uncompress($start, true));
 	$end_packed = inet_pton(Net_IPv6::uncompress($end, true));
@@ -660,32 +692,18 @@ function killbypid($pidfile, $waitfor = 0) {
 	return sigkillbypid($pidfile, "TERM", $waitfor);
 }
 
-function isvalidpid(string $pidfile): bool
-{
-	if (!is_file($pidfile) || !is_readable($pidfile)) {
+function isvalidpid(string $pidfile): bool {
+	if (! @file_exists($pidfile)) {
 		return false;
 	}
+	exec(implode(' ', [
+		'/bin/pkill',
+		'-0',
+		'-F', escapeshellarg($pidfile),
+		'2>/dev/null'
+	]), $_out, $ret);
 
-	$contents = file_get_contents($pidfile);
-	if ($contents === false) {
-		return false;
-	}
-
-	// Must be a positive integer
-	$pid = filter_var(trim($contents), FILTER_VALIDATE_INT, [
-		'options' => ['min_range' => 1],
-	]);
-	if ($pid === false) {
-		return false;
-	}
-
-	// Signal 0 probes process existence without actually signalling.
-	if (posix_kill($pid, 0)) {
-		return true;
-	}
-
-	// EPERM means the process exists but we lack permission to signal it.
-	return (posix_get_last_error() === POSIX_EPERM);
+	return ($ret === 0);
 }
 
 function is_process_running(string $name): bool {
@@ -1450,7 +1468,7 @@ function is_ipaddrv6_v4map($ipaddr) {
 
 /* returns true if $ipaddr is a valid dotted IPv4 address */
 function is_ipaddrv4($ipaddr) {
-	if (!is_string($ipaddr) || empty($ipaddr) || ip2long($ipaddr) === FALSE) {
+	if (!is_string($ipaddr) || empty($ipaddr) || preg_match('/\0/', $ipaddr) || ip2long($ipaddr) === FALSE) {
 		return false;
 	}
 	return true;
@@ -1570,6 +1588,54 @@ function validate_nat64_prefix(mixed $prefix):bool {
 	}
 }
 
+/**
+ * Get a list of valid alias tags.
+ *
+ * Each tag is trimmed, has a minimum length of 1, is stripped of
+ * double-quotes, and is delimited by ALIAS_TAG_DELIMITER.
+ */
+function parse_alias_tags(string|array $tags): array {
+	if (is_string($tags)) {
+		$tags = explode(ALIAS_TAG_DELIMITER, $tags);
+	}
+
+	$new_tags = [];
+	foreach ($tags as $tag) {
+		if (!is_string($tag)) {
+			continue;
+		}
+		$tag = str_replace('"', '', trim($tag));
+		if (strlen($tag) < 1) {
+			continue;
+		}
+		$new_tags[] = $tag;
+	}
+	if (!empty($new_tags)) {
+		$new_tags = array_unique($new_tags);
+	}
+
+	return $new_tags;
+}
+
+/**
+ * Get tags from a config alias.
+ */
+function get_tags_from_alias_item(array $alias): array {
+	if (!isset($alias['tags']) || !is_string($alias['tags'])) {
+		return [];
+	}
+	return parse_alias_tags($alias['tags']);
+}
+
+function is_alias_managed(array $alias): bool {
+	foreach (get_tags_from_alias_item($alias) as $tag) {
+		if ($tag == 'automanaged') {
+			return true;
+		}
+	}
+	return false;
+}
+
 function get_reserved_table_names($name = '', $type = '') {
 	global $reserved_table_names;
 
@@ -1589,7 +1655,7 @@ function get_reserved_table_names($name = '', $type = '') {
 		return $return;
 	}
 
-	// Check for give alias type(s).
+	// Check for given alias type(s).
 	foreach ($reserved_table_names as $alias_name => $alias_info) {
 		if (empty($type) || in_array($alias_info['type'], $requested_types)) {
 			$return[$alias_name] = $alias_info;
@@ -2525,6 +2591,21 @@ function get_configured_ipv6_addresses($linklocal_fallback = false) {
 }
 
 /*
+ * The ix0 and ix1 are not wired on 4100.  Ignore them.
+ */
+function interface_4100_is_valid($ifname) {
+	$platform = system_identify_specific_platform();
+	if ($platform['name'] != 4100) {
+		return true;
+	}
+	if (does_interface_exist('ix3') &&
+	    ($ifname == "ix0" || $ifname == "ix1")) {
+		return false;
+	}
+	return true;
+}
+
+/*
  *   get_interface_list() - Return a list of all physical interfaces
  *   along with MAC and status.
  *
@@ -2537,6 +2618,7 @@ function get_interface_list($mode = "active", $keyby = "physical", $vfaces = fal
 	/* get a list of virtual interface types */
 	if (!$vfaces) {
 		$vfaces = array(
+				'controltun',
 				'bridge',
 				'ppp',
 				'pppoe',
@@ -2558,10 +2640,12 @@ function get_interface_list($mode = "active", $keyby = "physical", $vfaces = fal
 				'tun',
 				'lagg',
 				'vip',
-				'tailscale'
+				'tailscale',
+				'vxlan'
 		);
 	} else {
 		$vfaces = array(
+				'controltun',
 				'bridge',
 				'poes',
 				'sl',
@@ -2619,7 +2703,8 @@ function get_interface_list($mode = "active", $keyby = "physical", $vfaces = fal
 		    interface_is_vlan($ifname) == NULL &&
 		    interface_is_qinq($ifname) == NULL &&
 		    !stristr($ifname, "_wlan") &&
-		    !stristr($ifname, "_stf")) {
+		    !stristr($ifname, "_stf") &&
+		    interface_4100_is_valid($ifname)) {
 			$toput = array(
 					"mac" => trim($alink[1]),
 					"up" => in_array($ifname, $upints)
@@ -2857,9 +2942,20 @@ function exec_command($command) {
 /* wrapper for exec()
    Executes in background or foreground.
    For background execution, returns PID of background process to allow calling code control */
-function mwexec($command, $nologentry = false, $clearsigmask = false, $background = false) {
+function mwexec($command, $logprioritypref = LOG_NOTICE, $clearsigmask = false, $background = false) {
 	global $g;
 	$retval = 0;
+
+	if (is_bool($logprioritypref)) {
+		// Keep compatibility with previous function definition.
+		if ($logprioritypref && !g_get('debug')) {
+			$logprioritypref = null;
+		} else {
+			$logprioritypref = LOG_NOTICE;
+		}
+	} elseif (!is_int($logprioritypref)) {
+		$logprioritypref = LOG_NOTICE;
+	}
 
 	if (g_get('debug')) {
 		if (!$_SERVER['REMOTE_ADDR']) {
@@ -2878,8 +2974,8 @@ function mwexec($command, $nologentry = false, $clearsigmask = false, $backgroun
 		// run in foreground, and (optionally) log if nonzero return
 		$outputarray = array();
 		exec("$command 2>&1", $outputarray, $retval);
-		if (($retval <> 0) && (!$nologentry || g_get('debug'))) {
-			logger(LOG_NOTICE, localize_text("The command '%1\$s' returned exit code '%2\$d', the output was '%3\$s' ", $command, $retval, implode(" ", $outputarray)));
+		if (($retval <> 0) && isset($logprioritypref)) {
+			logger($logprioritypref, localize_text("The command '%1\$s' returned exit code '%2\$d', the output was '%3\$s' ", $command, $retval, implode(" ", $outputarray)));
 		}
 	}
 
@@ -3629,6 +3725,10 @@ function is_interface_vlan_mismatch() {
 	foreach (config_get_path('vlans/vlan', []) as $vlan) {
 		if (substr($vlan['if'], 0, 4) == "lagg") {
 			return false;
+		} elseif (substr($vlan['if'], 0, 5) == "vxlan") {
+			return false;
+		} elseif (substr($vlan['if'], 0, 6) == "bridge") {
+			return false;
 		}
 		if (does_interface_exist($vlan['if']) == false) {
 			return true;
@@ -3641,6 +3741,22 @@ function is_interface_vlan_mismatch() {
 function is_interface_mismatch() {
 	global $g;
 
+	/* EC2 instance can change NIC when instance type changes */
+	if (substr($g['default-config-flavor'], 0, 3) == 'ec2') {
+		if (does_interface_exist('ixv0')) {
+			$if = 'ixv0';
+		} elseif (does_interface_exist('ena0')) {
+			$if = 'ena0';
+		} else {
+			$if = 'xn0';
+		}
+
+		if (config_get_path('interfaces/wan/if') != $if) {
+			config_set_path('interfaces/wan/if', $if);
+			write_config("Adjusting EC2 WAN interface to '{$if}'");
+		}
+	}
+
 	$do_assign = false;
 	$i = 0;
 	$missing_interfaces = array();
@@ -3648,7 +3764,7 @@ function is_interface_mismatch() {
 		foreach (config_get_path('interfaces', []) as $ifcfg) {
 			if (interface_is_vlan($ifcfg['if']) != NULL ||
 			    interface_is_qinq($ifcfg['if']) != NULL ||
-			    preg_match("/^bridge|^cua|^enc|^gif|^gre|^ipsec|^l2tp|^lagg|^ngeth|^ovpn|^ppp|^pptp|^tap|^tun|^ue|vlan|^wg|_wlan|_\d{0,4}_\d{0,4}$/i", $ifcfg['if'])) {
+			    preg_match("/^bridge|^cua|^enc|^gif|^gre|^ipsec|^l2tp|^lagg|^ngeth|^ovpn|^ppp|^pptp|^tap|^tun|^ue|^vxlan|vlan|^wg|_wlan|_\d{0,4}_\d{0,4}$/i", $ifcfg['if'])) {
 				// Do not check these interfaces.
 				$i++;
 				continue;
@@ -3665,7 +3781,7 @@ function is_interface_mismatch() {
 	 * see https://redmine.pfsense.org/issues/12170 */
 	foreach (config_get_path('vlans/vlan', []) as $vlan) {
 		if (!does_interface_exist($vlan['if']) &&
-		    !preg_match("/^enc|^cua|^tun|^tap|^l2tp|^pptp|^ppp|^ovpn|^ipsec|^gif|^gre|^lagg|^bridge|vlan|_wlan|_\d{0,4}_\d{0,4}$/i", $vlan['if'])) {
+		    !preg_match("/^enc|^cua|^tun|^tap|^l2tp|^pptp|^ppp|^ovpn|^ipsec|^gif|^gre|^lagg|^bridge|^vxlan|vlan|_wlan|_\d{0,4}_\d{0,4}$/i", $vlan['if'])) {
 			$missing_interfaces[] = $vlan['if'];
 			$do_assign = true;
 		}
@@ -3693,6 +3809,10 @@ function is_interface_mismatch() {
 
 /* sync carp entries to other firewalls */
 function carp_sync_client() {
+	if (g_get('use_controller', false) && pfnet_controller_ready() !== false) {
+		// Defer to Nexus.
+		return;
+	}
 	send_event("filter sync");
 }
 
@@ -4118,9 +4238,6 @@ function route_add_or_change($target, $gw, $iface = '', $args = '',
 		$target_prefix .= ' -inet';
 	}
 
-	/* If there is another route to the same target, remove it */
-	route_del($target, $ipprotocol);
-
 	$params = '';
 	if (!empty($iface) && does_interface_exist($iface)) {
 		$params .= " -iface {$iface}";
@@ -4145,6 +4262,40 @@ function route_add_or_change($target, $gw, $iface = '', $args = '',
 			logger(LOG_ERR, localize_text("%s Network interface was not found (%s)", 'route_add_or_change:', $iface));
 		}
 		return false;
+	}
+
+	/*
+	 * For default routes, prefer an in-place route change over delete/add.
+	 * During gateway failover, deleting the old default route before the
+	 * replacement exists can temporarily break monitor reachability for other
+	 * gateways when static dpinger monitor routes are disabled.
+	 */
+	if ($target == 'default') {
+		$currentroute = route_get($target, $ipprotocol, true);
+		if (!empty($currentroute)) {
+			exec(escapeshellcmd("/sbin/route change {$target_prefix} " .
+			    "{$target} {$args} {$params}"), $output, $rc);
+
+			if (g_get('debug')) {
+				logger(LOG_DEBUG, "ROUTING debug: " . microtime() .
+				    " - CHANGE RC={$rc} - {$target} {$args}");
+				file_put_contents("/dev/console", "\n[" . getmypid() .
+				    "] ROUTE CHANGE: {$target_prefix} {$target} {$args} " .
+				    "{$params} result: {$rc}");
+			}
+
+			if ($rc == 0) {
+				return true;
+			}
+
+			logger(LOG_ERR, localize_text(
+			    "Failed to change existing default route for %s; keeping current default route",
+			    $ipprotocol));
+			return false;
+		}
+	} else {
+		/* If there is another route to the same target, remove it */
+		route_del($target, $ipprotocol);
 	}
 
 	exec(escapeshellcmd("/sbin/route add {$target_prefix} " .

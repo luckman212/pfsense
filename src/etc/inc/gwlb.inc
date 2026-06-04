@@ -45,20 +45,6 @@ if (!array_key_exists('GatewaysCache', $GLOBALS)) {
 	$GLOBALS['GatewaysCache'] = null;
 }
 
-define('GW_STATUS_UNKNOWN', 0);
-define('GW_STATUS_ONLINE', 1);
-define('GW_STATUS_ONLINE_LATENCY', 2);
-define('GW_STATUS_ONLINE_LOSS', 3);
-define('GW_STATUS_ONLINE_FORCED', 4);
-define('GW_STATUS_OFFLINE', 5);
-define('GW_STATUS_OFFLINE_LATENCY', 6);
-define('GW_STATUS_OFFLINE_LOSS', 7);
-define('GW_STATUS_OFFLINE_FORCED', 8);
-define('GW_STATUS_LEVEL_UNKNOWN', 0);
-define('GW_STATUS_LEVEL_SUCCESS', 1);
-define('GW_STATUS_LEVEL_WARNING', 2);
-define('GW_STATUS_LEVEL_FAILURE', 3);
-
 /**
  * Caches the gateway list and filters the result. Changes to gateways should
  * call refresh_gateways(), e.g. when adding or removing dynamic gateways.
@@ -150,239 +136,6 @@ function refresh_gateways(): void {
 	}
 	if ($write_config) {
 		write_config(gettext('Synced configured gateways'), true, true);
-	}
-}
-
-/**
- * Helper function that retrieves the state of a gateway.
- * @param mixed $gateway The gateway to be checked.
- * 	- string: the gateway name.
- * 	- array: value from the array result of get_gateways().
- * 	- array: value from the array result of return_gateways_status().
- * @param array|bool $cache (Optional) Controls how the cache is used.
- * 	- true (default): Use cache automatically.
- *  - false: refetch gateway information.
- *  - array: the result of return_gateways_status(true).
- * @return array<array|array{status: null|int, config: null|array}>
- */
-function get_gateway_status(mixed $gateway, array|bool $cache = true): array {
-	$gateway_details = [
-		'status' => null,
-		'config' => null
-	];
-
-	if (!is_array($gateway) && !is_string($gateway)) {
-		return [GW_STATUS_UNKNOWN, $gateway_details];
-	}
-
-	if ($cache === false) {
-		refresh_gateways();
-		$gateways = get_gateways(GW_CACHE_ALL);
-		$gateways_status = return_gateways_status(true);
-	} else {
-		static $gateways = get_gateways(GW_CACHE_ALL);
-		if ($cache === true) {
-			global $GatewaysStatus;
-			if (!empty($GatewaysStatus)) {
-				// Use the gateway status generated during filter reloads.
-				$gateways_status = $GatewaysStatus;
-			} else {
-				static $gateways_status_cache = return_gateways_status(true);
-				// Use the cached gateway status.
-				$gateways_status = $gateways_status_cache;
-			}
-		} else {
-			// Use the provided gateway status array.
-			$gateways_status = $cache;
-		}
-	}
-
-	// Normalize gateway argument; config from get_gateways() is needed.
-	if (is_string($gateway)) {
-		if (!isset($gateways[$gateway])) {
-			// Gateway unavailable.
-			return [GW_STATUS_UNKNOWN, $gateway_details];
-		}
-		$gateway = $gateways[$gateway];
-	} elseif (isset($gateway['status'])) {
-		// Array comes from return_gateways_status().
-		if (!isset($gateways[$gateway['gwname']])) {
-			// Gateway unavailable.
-			return [GW_STATUS_UNKNOWN, $gateway_details];
-		}
-		$gateway = $gateways[$gateway['gwname']];
-	} // else Array comes from get_gateways().
-	$gateway_details['config'] = &$gateway;
-
-	// Check gateway config options.
-	if (isset($gateway['monitor_disable'])) {
-		// Gateway monitoring is disabled.
-		return [GW_STATUS_ONLINE_FORCED, $gateway_details];
-	}
-	if (isset($gateway['force_down'])) {
-		// Gateway is forced down.
-		return [GW_STATUS_OFFLINE_FORCED, $gateway_details];
-	}
-
-	// Get gatewy status.
-	if (!isset($gateways_status[$gateway['name']]['status'])) {
-		// Gateway status unavailable (e.g. pending gateway).
-		return [GW_STATUS_UNKNOWN, $gateway_details];
-	}
-	$gateway_details['status'] = &$gateways_status[$gateway['name']];
-
-	// "substatus" overrides "status" when action is disabled. Values
-	// are defined in get_dpinger_status().
-	switch (array_get_path($gateways_status, "{$gateway['name']}/substatus")) {
-		case 'highloss':
-			return [GW_STATUS_OFFLINE_LOSS, $gateway_details];
-		case 'highdelay':
-			return [GW_STATUS_OFFLINE_LATENCY, $gateway_details];
-		case 'loss':
-			return [GW_STATUS_ONLINE_LOSS, $gateway_details];
-		case 'delay':
-			return [GW_STATUS_ONLINE_LATENCY, $gateway_details];
-		default:
-			// "substatus" may be "none", in which case chech "status".
-			// "substatus" may also be "force_down"; since this is already
-			// checked directly from the gateway config then it's not
-			// necessary to check it now.
-			break;
-	}
-
-	if ($gateways_status[$gateway['name']]['status'] != 'online') {
-		// Gateway is down.
-		return [GW_STATUS_OFFLINE, $gateway_details];
-	}
-
-	return [GW_STATUS_ONLINE, $gateway_details];
-}
-
-// Determines if a given gateway status is considered as online.
-function is_online_gateway_status(int $gateway_status, string $trigger = 'downlosslatency'): bool {
-	switch ($trigger) {
-	case 'down':
-		// High packet loss and latency is acceptable.
-		return match ($gateway_status) {
-			GW_STATUS_ONLINE => true,
-			GW_STATUS_ONLINE_LATENCY => true,
-			GW_STATUS_ONLINE_LOSS => true,
-			GW_STATUS_ONLINE_FORCED => true,
-			GW_STATUS_OFFLINE_LATENCY => true,
-			GW_STATUS_OFFLINE_LOSS => true,
-			default => false
-		};
-	case 'downloss':
-		// High packet loss is acceptable.
-		return match ($gateway_status) {
-			GW_STATUS_ONLINE => true,
-			GW_STATUS_ONLINE_LATENCY => true,
-			GW_STATUS_ONLINE_LOSS => true,
-			GW_STATUS_ONLINE_FORCED => true,
-			GW_STATUS_OFFLINE_LATENCY => true,
-			default => false
-		};
-	case 'downlatency':
-		// High packet latency is acceptable.
-		return match ($gateway_status) {
-			GW_STATUS_ONLINE => true,
-			GW_STATUS_ONLINE_LATENCY => true,
-			GW_STATUS_ONLINE_LOSS => true,
-			GW_STATUS_ONLINE_FORCED => true,
-			GW_STATUS_OFFLINE_LOSS => true,
-			default => false
-		};
-	default:
-		// High packet loss and latency is not acceptable.
-		return match ($gateway_status) {
-			GW_STATUS_ONLINE => true,
-			GW_STATUS_ONLINE_LATENCY => true,
-			GW_STATUS_ONLINE_LOSS => true,
-			GW_STATUS_ONLINE_FORCED => true,
-			default => false
-		};
-	}
-}
-
-// Wrapper for get_gateway_status() that returns a bool instead.
-function is_gateway_online(mixed $gateway, string $trigger = 'downlosslatency', array|bool $cache = true): bool {
-	if (!is_array($gateway) && !is_string($gateway)) {
-		return false;
-	}
-	list($status) = get_gateway_status($gateway, $cache);
-	return is_online_gateway_status($status, $trigger);
-}
-
-function is_gateway_action_enabled(mixed $gateway): bool {
-	if (is_string($gateway)) {
-		$gateways = get_gateways(GW_CACHE_ALL);
-		$gateway = isset($gateways[$gateway]) ? $gateways[$gateway] : [];
-	} elseif (!is_array($gateway)) {
-		return false;
-	}
-	return !isset($gateway['action_disable']);
-}
-
-function is_gateway_state_killing_enabled(mixed $gateway): bool {
-	if (is_string($gateway)) {
-		$gateways = get_gateways(GW_CACHE_ALL);
-		$gateway = isset($gateways[$gateway]) ? $gateways[$gateway] : [];
-	} elseif (!is_array($gateway)) {
-		return false;
-	}
-	if (empty($gateway['gw_down_kill_states'])) {
-		return (config_get_path('system/gw_down_kill_states', 'none') != 'none');
-	}
-	return ($gateway['gw_down_kill_states'] != 'none');
-}
-
-function get_gateway_status_text(int $gateway_status): array {
-	switch ($gateway_status) {
-	case GW_STATUS_ONLINE_FORCED:
-		return [
-			'reason' => gettext('Online (unmonitored)'),
-			'level' => GW_STATUS_LEVEL_SUCCESS
-		];
-	case GW_STATUS_ONLINE_LOSS:
-		return [
-			'reason' => gettext('Online (packet loss)'),
-			'level' => GW_STATUS_LEVEL_WARNING
-		];
-	case GW_STATUS_ONLINE_LATENCY:
-		return [
-			'reason' => gettext('Online (latency)'),
-			'level' => GW_STATUS_LEVEL_WARNING
-		];
-	case GW_STATUS_ONLINE:
-		return [
-			'reason' => gettext('Online'),
-			'level' => GW_STATUS_LEVEL_SUCCESS
-		];
-	case GW_STATUS_OFFLINE_FORCED:
-		return [
-			'reason' => gettext('Offline (forced)'),
-			'level' => GW_STATUS_LEVEL_WARNING
-		];
-	case GW_STATUS_OFFLINE_LOSS:
-		return [
-			'reason' => gettext('Offline (packet loss)'),
-			'level' => GW_STATUS_LEVEL_FAILURE
-		];
-	case GW_STATUS_OFFLINE_LATENCY:
-		return [
-			'reason' => gettext('Offline (latency)'),
-			'level' => GW_STATUS_LEVEL_FAILURE
-		];
-	case GW_STATUS_OFFLINE:
-		return [
-			'reason' => gettext('Offline'),
-			'level' => GW_STATUS_LEVEL_FAILURE
-		];
-	default:
-		return [
-			'reason' => gettext('Pending'),
-			'level' => GW_STATUS_LEVEL_UNKNOWN
-		];
 	}
 }
 
@@ -546,6 +299,23 @@ function setup_gateways_monitor() {
 		stop_dpinger();
 		return;
 	}
+	/*
+	 * A dpinger alarm triggers a filter reload.  When the system default
+	 * gateway is a gateway group, make the default-route decision here as
+	 * part of the gateway-monitor reload path.  Do this before monitor route
+	 * cleanup/recreation so monitor traffic for other gateways is not left
+	 * without a usable default route when per-gateway static monitor routes
+	 * are disabled.
+	 */
+	$gateways_status = return_gateways_status(true);
+	$gw4 = lookup_gateway_or_group_by_name(config_get_path('gateways/defaultgw4', ""));
+	$gw6 = lookup_gateway_or_group_by_name(config_get_path('gateways/defaultgw6', ""));
+	if ($gw4 && $gw4['type'] == 'gatewaygroup') {
+		fixup_default_gateway("inet", $gateways_status, $gateways_arr);
+	}
+	if ($gw6 && $gw6['type'] == 'gatewaygroup') {
+		fixup_default_gateway("inet6", $gateways_status, $gateways_arr);
+	}
 	if (is_platform_booting()) {
 		echo "Setting up gateway monitors...";
 	}
@@ -699,6 +469,11 @@ function get_highest_failover_tier_online(?string $gateway_group): int|false {
 		return false;
 	}
 
+	global $GatewaysStatus;
+	if (empty($GatewaysStatus)) {
+		return false;
+	}
+
 	foreach (config_get_path('gateways/gateway_group', []) as $group) {
 		// check if this is the gateway group being queried
 		if ($group['name'] != $gateway_group) {
@@ -729,7 +504,7 @@ function get_highest_failover_tier_online(?string $gateway_group): int|false {
 
 		// remove offline gateways
 		foreach (array_keys($group_gateways) as $gateway_name) {
-			if (!is_gateway_online($gateway_name, $group['trigger'])) {
+			if ($GatewaysStatus[$gateway_name]['status'] != 'online') {
 				unset($group_gateways[$gateway_name]);
 			}
 		}
@@ -847,6 +622,7 @@ function remove_failover_states(?string $gateway_name = null): void {
 	}
 	foreach ($default_gateways as $gateway_name => $gateway_interfaces) {
 		if (empty($gateway_interfaces)) {
+			// not a gateway group
 			continue;
 		}
 
@@ -868,7 +644,10 @@ function remove_failover_states(?string $gateway_name = null): void {
 		}
 		foreach (array_keys($gateway_interfaces) as $gateway_interface) {
 			mwexec_bg('/sbin/pfctl -M -i ' . escapeshellarg($gateway_interface) . " {$host_prefix} -q");
-			logger(LOG_NOTICE, localize_text("killed {$log_message} states for the lower-priority gateway {$gateway_name} ({$gateway_interface})"), LOG_PREFIX_GWMON);
+			logger(LOG_NOTICE, localize_text(
+				"killed %s states for gateways with interface %s due to gateway recovery for %s",
+				$log_message, $gateway_interface, $gateway_name
+			), LOG_PREFIX_GWMON);
 		}
 	}
 }
@@ -1628,6 +1407,83 @@ function return_gateways_array($disabled = false, $localhost = false, $inactive 
 	return $gways;
 }
 
+function get_gwgroup_members_configured_inner($group, $gateways_arr, $ipprotocol) {
+	$result = array();
+	$tiers = array();
+
+	foreach ($group['item'] as $item) {
+		list($gwname, $tier, $vipname) = explode("|", $item);
+		if (!isset($gateways_arr[$gwname])) {
+			continue;
+		}
+
+		$gateway = $gateways_arr[$gwname];
+		if (($gateway['ipprotocol'] != $ipprotocol) ||
+		    isset($gateway['force_down']) ||
+		    isset($gateway['disabled'])) {
+			continue;
+		}
+
+		$int = $gateway['interface'];
+		if (empty($int)) {
+			continue;
+		}
+
+		$gatewayip = "";
+		if (is_ipaddr($gateway['gateway'])) {
+			$gatewayip = $gateway['gateway'];
+		} else {
+			if ($gateway['ipprotocol'] == 'inet') {
+				$gatewayip = get_interface_gateway($gateway['friendlyiface']);
+			} else {
+				$gatewayip = get_interface_gateway_v6($gateway['friendlyiface']);
+			}
+		}
+
+		if (!is_ipaddr($gatewayip)) {
+			continue;
+		}
+
+		if ($gateway['ipprotocol'] == 'inet') {
+			$gwifip = find_interface_ip($gateway['interface'], true);
+			if (!is_ipaddrv4($gwifip) || ($gwifip == "0.0.0.0")) {
+				continue;
+			}
+		} else {
+			if (is_linklocal($gatewayip) && empty(get_ll_scope($gatewayip))) {
+				$gatewayip .= '%' . $int;
+			}
+			$gwifip = find_interface_ipv6($gateway['interface'], true);
+			if (!is_ipaddrv6($gwifip)) {
+				continue;
+			}
+		}
+
+		if (!is_array($tiers[$tier])) {
+			$tiers[$tier] = array();
+		}
+		$tiers[$tier][] = array(
+			'gw' => $gwname,
+			'int' => $int,
+			'gwip' => $gatewayip,
+			'weight' => isset($gateway['weight']) ? $gateway['weight'] : 1
+		);
+	}
+
+	ksort($tiers);
+	foreach ($tiers as $tier) {
+		foreach ($tier as $member) {
+			$result[] = $member;
+		}
+		if (count($result) > 0) {
+			break;
+		}
+	}
+
+	$result['descr'] = $group['descr'];
+	return $result;
+}
+
 function fixup_default_gateway($ipprotocol, $gateways_status, $gateways_arr) {
 	/*
 	 * NOTE: The code below is meant to replace the default gateway when it goes down.
@@ -1660,7 +1516,8 @@ function fixup_default_gateway($ipprotocol, $gateways_status, $gateways_arr) {
 				continue;
 			}
 
-			if (!is_gateway_action_enabled($gwsttng) || is_gateway_online($gwsttng)) {
+			if (isset($gwsttng['monitor_disable']) || isset($gwsttng['action_disable']) ||
+			    ($gateways_status[$gwname]['status'] == "online")) {
 				$set_dfltgwname = $gwname;
 				break;
 			}
@@ -1680,11 +1537,25 @@ function fixup_default_gateway($ipprotocol, $gateways_status, $gateways_arr) {
 		// a gwgroup is selected
 		// find the best available gateway given options available..
 		$gwg_members = array();
+		$gwgroup = array();
 		$viplist = get_configured_vip_list();
 		foreach (config_get_path('gateways/gateway_group', []) as $group) {
 			if ($group['name'] == $gwdefault) {
+				$gwgroup = $group;
 				// finds the gw members of the best available tier for this group.
 				$gwg_members = get_gwgroup_members_inner($group, $gateways_status, $gateways_arr, $viplist);
+			}
+		}
+
+		$gwg_members = array_filter($gwg_members, 'is_array');
+
+		if ((count($gwg_members) == 0) && !empty($gwgroup) &&
+		    config_path_enabled('system', 'dpinger_dont_add_static_routes')) {
+			$currentdefaultgwip = route_get_default($ipprotocol);
+			if (empty($currentdefaultgwip)) {
+				logger(LOG_NOTICE, localize_text("No usable monitored gateway members found for default gateway group %s; attempting configured-member bootstrap selection for %s", $gwdefault, $ipprotocol));
+				$gwg_members = get_gwgroup_members_configured_inner($gwgroup, $gateways_arr, $ipprotocol);
+				$gwg_members = array_filter($gwg_members, 'is_array');
 			}
 		}
 
@@ -1693,7 +1564,6 @@ function fixup_default_gateway($ipprotocol, $gateways_status, $gateways_arr) {
 			$found_current = false;
 			foreach($gwg_members as $gwgroupitem) {
 				if (!empty($currentdefaultgwip) &&
-				    is_array($gwgroupitem) &&
 				    ($gwgroupitem['gwip'] == $currentdefaultgwip)) {
 					$set_dfltgwname = $gwgroupitem['gw'];
 					$found_current = true;
@@ -1704,7 +1574,8 @@ function fixup_default_gateway($ipprotocol, $gateways_status, $gateways_arr) {
 				}
 			}
 			if (!$found_current) {
-				$set_dfltgwname = $gwg_members[0]['gw'];
+				$gwgroupitem = reset($gwg_members);
+				$set_dfltgwname = $gwgroupitem['gw'];
 				logger(LOG_NOTICE, localize_text("switch default gateway to: %s", $set_dfltgwname));
 			}
 		} else {
@@ -1714,7 +1585,12 @@ function fixup_default_gateway($ipprotocol, $gateways_status, $gateways_arr) {
 	if (!empty($set_dfltgwname) && isset($gateways_arr[$set_dfltgwname])) {
 		setdefaultgateway($gateways_arr[$set_dfltgwname]);
 	} elseif (empty($set_dfltgwname)) {
-		route_del('default', $ipprotocol);
+		$currentdefaultgwip = route_get_default($ipprotocol);
+		if (!empty($currentdefaultgwip)) {
+			logger(LOG_NOTICE, localize_text("No replacement default gateway available for %s; keeping current default gateway %s", $ipprotocol, $currentdefaultgwip));
+		} else {
+			logger(LOG_NOTICE, localize_text("No replacement default gateway available for %s and no current default gateway exists", $ipprotocol));
+		}
 	}
 }
 
@@ -1779,7 +1655,6 @@ function get_gwgroup_members_inner($group, $gateways_status, $gateways_arr, $vip
 	$gwvip_arr = array();
 	foreach ($group['item'] as $item) {
 		list($gwname, $tier, $vipname) = explode("|", $item);
-		list($gateway_status) = get_gateway_status($gwname, (is_array($gateways_status) ? $gateways_status : true));
 
 		if (is_ipaddr($viplist[$vipname])) {
 			if (!is_array($gwvip_arr[$group['name']])) {
@@ -1798,13 +1673,13 @@ function get_gwgroup_members_inner($group, $gateways_status, $gateways_arr, $vip
 		if (is_array($gateways_status[$gwname])) {
 			$status = $gateways_status[$gwname];
 			$gwdown = false;
-			if (!is_online_gateway_status($gateway_status)) {
+			if (stristr($status['status'], "down")) {
 				$gwdown = true;
-				switch ($gateway_status) {
-					case GW_STATUS_OFFLINE_LOSS:
+				switch ($status['substatus']) {
+					case "highloss":
 						$msg = sprintf(gettext('%1$s has packet loss, omitting from routing group %2$s'), $gwname, $group['name']);
 						break;
-					case GW_STATUS_OFFLINE_LATENCY:
+					case "highdelay":
 						$msg = sprintf(gettext('%1$s has high latency, omitting from routing group %2$s'), $gwname, $group['name']);
 						break;
 					default:
@@ -1843,7 +1718,7 @@ function get_gwgroup_members_inner($group, $gateways_status, $gateways_arr, $vip
 				}
 				pkg_call_plugins('plugin_gateway', $pluginparams);
 			}
-		} elseif (($gateway_status == GW_STATUS_ONLINE_FORCED) || !is_gateway_action_enabled($gateways_arr[$gwname])) {
+		} else if (isset($gateways_arr[$gwname]['monitor_disable']) || isset($gateways_arr[$gwname]['action_disable'])) {
 			$tiers[$tier][] = $gwname;
 		}
 	}
@@ -1930,14 +1805,8 @@ function get_gwgroup_members($groupname) {
  * return the first tier if none are online.
  */
 function return_gateway_groups_array($fixup = false) {
-	// Use the cached status when available from filter reloads.
-	global $GatewaysStatus;
-	if (!empty($GatewaysStatus)) {
-		$gateways_status = $GatewaysStatus;
-	} else {
-		$gateways_status = return_gateways_status(true);
-	}
-
+	/* fetch the current gateways status */
+	$gateways_status = return_gateways_status(true);
 	$gateways_arr = get_gateways();
 	$gateway_groups_array = array();
 	if ($fixup == true) {
@@ -2670,12 +2539,14 @@ function save_gateway($gateway_settings, $realid = "", $json = false) {
 			route_del($a_gateway_item['gateway']);
 		}
 
-		/* NOTE: If monitor ip is changed need to cleanup the old static route */
+        /* NOTE: If monitor ip changed or no route is preferred, remove the old static route */
 		if ($gateway_settings['monitor'] != "dynamic" &&
 		    !empty($a_gateway_item) &&
 		    is_ipaddr($a_gateway_item['monitor']) &&
-		    $gateway_settings['monitor'] != $a_gateway_item['monitor'] &&
-		    $gateway['gateway'] != $a_gateway_item['monitor']) {
+            (($gateway['monitor'] != $a_gateway_item['monitor'] &&
+                $gateway['gateway'] != $a_gateway_item['monitor']) ||
+            (isset($gateway['dpinger_dont_add_static_route']) &&
+                !isset($a_gateway_item['dpinger_dont_add_static_route'])))) {
 			route_del($a_gateway_item['monitor']);
 		}
 	}
@@ -2777,16 +2648,18 @@ function gateway_set_enabled($name, $enabled) {
 	} else {
 		/* Check if the gateway was enabled but changed to disabled. */
 		if (!isset($gateway['disabled'])) {
-			/*  If the disabled gateway was the default route, remove the default route */
+			/*
+			 * Do not delete the default route here. Removing the current default
+			 * route before gateway selection is recalculated can break monitor
+			 * reachability for other gateways when static dpinger monitor routes
+			 * are disabled. Let the normal default gateway fixup path replace
+			 * the route after the disabled gateway is no longer eligible.
+			 */
 			if (is_ipaddr($gateway['gateway'])) {
 				$inet = (!is_ipaddrv4($gateway['gateway']) ? 'inet6' : 'inet');
-				if ($inet == 'inet') {
-					$cgw = route_get_default('inet');
-				} else {
-					$cgw = route_get_default('inet6');
-				}
+				$cgw = route_get_default($inet);
 				if ($gateway['gateway'] == $cgw) {
-					route_del("default", $inet);
+					logger(LOG_NOTICE, localize_text("Gateway %s was disabled while it was the current default gateway for %s; keeping the existing default route until gateway selection is recalculated", $gateway['name'], $inet));
 				}
 			}
 			$gateway['disabled'] = true;
